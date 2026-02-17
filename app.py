@@ -13,13 +13,14 @@ st.set_page_config(
 api_key = os.environ.get("GOOGLE_API_KEY")
 
 if not api_key:
-    st.error("⚠️ 未检测到 API Key。请在 Render 后台设置 GOOGLE_API_KEY 环境变量。")
+    st.error("⚠️ 未检测到 API Key。请在 Render 后台 Settings -> Environment Variables 中设置 GOOGLE_API_KEY。")
     st.stop()
 
 # --- 3. 初始化 Gemini 模型 ---
+# 使用最新版本的配置
 genai.configure(api_key=api_key)
 
-# 核心指令：这里放我们打磨好的 HSK1 Unit 11 挑战者提示词
+# 核心指令：HSK1 Unit 11 挑战者模式
 SYSTEM_PROMPT = """
 ### 1. 核心身份与模式 (Core Identity & Mode)
 你是“龙文中文学校”的 HSK1 专属助教。
@@ -86,30 +87,37 @@ generation_config = {
     "max_output_tokens": 8192,
 }
 
+# 使用标准 Flash 模型名称
 model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash", # 使用 Flash 模型速度快且便宜
+    model_name="gemini-1.5-flash",
     generation_config=generation_config,
     system_instruction=SYSTEM_PROMPT
 )
 
 # --- 4. 界面 UI ---
 st.title("🐲 龙文 HSK1 语法挑战者")
-st.markdown("👋 你好！我是你的 Unit 11 专属陪练。准备好接受挑战了吗？")
+st.markdown("👋 你好！我是你的 Unit 11 专属陪练。")
 
 # 初始化聊天历史
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    
     # 第一次加载时，让 AI 主动打招呼并出题
     try:
+        # 启动新对话
         chat = model.start_chat(history=[])
-        response = chat.send_message("Start conversation.") # 触发 System Prompt 的开场
+        st.session_state.chat_session = chat
+        
+        # 发送空消息或指令触发开场白 (取决于模型反应，这里我们直接发个系统指令)
+        response = chat.send_message("Please start the challenge as per instructions.")
         st.session_state.messages.append({"role": "assistant", "content": response.text})
-        st.session_state.chat_session = chat # 保存 chat session 对象
+        
     except Exception as e:
-        st.error(f"连接 AI 失败: {e}")
+        # 如果开场失败（极少数情况），显示友好提示
+        st.error(f"AI 连接初始化中... (请刷新页面重试) \n错误信息: {e}")
 
 # 恢复 Chat Session (如果已有历史)
-if "chat_session" not in st.session_state and api_key:
+elif "chat_session" not in st.session_state and api_key:
      st.session_state.chat_session = model.start_chat(history=[])
 
 # 显示历史消息
