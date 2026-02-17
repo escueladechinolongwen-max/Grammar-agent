@@ -2,22 +2,23 @@ import streamlit as st
 import os
 import google.generativeai as genai
 
-# --- 1. Page Configuration ---
+# --- 1. 页面基础配置 ---
 st.set_page_config(
-    page_title="Long Wen - HSK1 Grammar Challenge",
+    page_title="Long Wen - HSK1 Grammar (Pro)",
     page_icon="🐲",
     layout="centered"
 )
 
-# --- 2. API Key Setup ---
+# --- 2. 安全获取 API Key ---
 api_key = os.environ.get("GOOGLE_API_KEY")
 if not api_key:
-    st.error("⚠️ API Key not found. Please check Render Environment Variables.")
+    st.error("⚠️ Error: API Key not found. Please check Render Environment Variables.")
     st.stop()
 
+# 配置 Google AI
 genai.configure(api_key=api_key)
 
-# --- 3. System Prompt (English Version) ---
+# --- 3. 核心大脑指令 (双语自适应版) ---
 SYSTEM_PROMPT = """
 You are the elite HSK1 Grammar Teaching Assistant for "Long Wen Chinese School" (龙文中文学校).
 Your sole purpose is to challenge students on **Unit 11 Grammar Points**.
@@ -32,67 +33,71 @@ Your sole purpose is to challenge students on **Unit 11 Grammar Points**.
 1. **Active Challenger**: Do not wait for questions. Always end your turn by assigning a new **Translation Challenge** (e.g., "Translate this to Chinese: ...").
 2. **Vocabulary Limit**: STRICTLY limit Chinese vocabulary to **HSK1 Unit 1-11**. Do not use words from Unit 12+.
 3. **Correction Style**: 
-   - If WRONG: Do not give the answer immediately. Give a hint about the grammar rule (e.g., "Time goes after the verb").
-   - If RIGHT: Praise the specific grammar point used correctly (e.g., "Great job placing 'qian' at the end!"), then give the next question.
+   - If WRONG: Do not give the answer immediately. Give a hint about the grammar rule.
+   - If RIGHT: Praise the specific grammar point used correctly, then give the next question.
 
 ### 📚 UNIT 11 GRAMMAR SCOPE
 1. **Time Expression "...前" ( ... qián)**
    - Rule: Placed AFTER the time/action (e.g., "Three days ago" -> "San tian qian").
    - Challenge: "Before 5 o'clock", "Before going home".
 2. **Duration (Time Spent)**
-   - Rule: Verb + Duration (e.g., "Sleep for 8 hours" -> "Shui ba ge xiaoshi"). *Note: Do not use 'le' for past tense yet, focus on 'xiang/yao' (want to).*
+   - Rule: Verb + Duration (e.g., "Sleep for 8 hours" -> "Shui ba ge xiaoshi").
    - Challenge: "I want to live in Beijing for 3 years."
 3. **Special Question Questions**
    - Rule: Question words do NOT move to the front.
    - Challenge: "What time do you go?", "When do you return?".
 """
 
-# --- 4. Model Initialization (Paid Tier: 1.5 Flash) ---
+# --- 4. 初始化模型 (使用稳定版 -001) ---
 try:
+    # 使用 -001 后缀，这在美国节点上是最稳定的版本
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash", 
+        model_name="gemini-1.5-flash-001", 
         system_instruction=SYSTEM_PROMPT
     )
 except Exception as e:
     st.error(f"Model configuration error: {e}")
     st.stop()
 
-# --- 5. Chat UI Interface ---
-st.title("🐲 Long Wen HSK1 Challenge")
+# --- 5. 聊天界面逻辑 ---
+st.title("🐲 Long Wen HSK1 Challenge (Pro)")
 
-# Initialize Chat History
+# 初始化历史记录
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display Chat History
+# 显示历史消息
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Initial Greeting (Bilingual)
+# 开场白 (不消耗配额)
 if not st.session_state.messages:
-    st.info("👋 Welcome! / ¡Bienvenido! \n\nPlease type **'Hi'** (English) or **'Hola'** (Español) to start the challenge!")
+    st.info("👋 Welcome! / ¡Bienvenido! \n\nPlease type **'Hi'** or **'Hola'** to start!")
 
-# --- 6. Handle User Input ---
+# 处理用户输入
 if prompt := st.chat_input("Type your answer here..."):
-    # Display User Message
+    # 1. 显示用户的话
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # Generate AI Response
+    # 2. 调用 AI
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         try:
-            # Start session if needed
+            # 如果是第一次对话，建立 session
             if "chat_session" not in st.session_state:
                 st.session_state.chat_session = model.start_chat(history=[])
             
-            # Send message to AI
+            # 发送给 Google
             response = st.session_state.chat_session.send_message(prompt)
             
-            # Display Result
+            # 显示回答
             message_placeholder.markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
             
         except Exception as e:
-            st.error(f"Error: {e}")
+            # 错误处理
+            st.error(f"Connection Error: {e}")
+            if "404" in str(e):
+                st.warning("👉 Tip: If you see 404, please try 'Manual Deploy -> Clear build cache' in Render.")
