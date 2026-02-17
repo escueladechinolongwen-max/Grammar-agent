@@ -18,7 +18,6 @@ if not api_key:
 genai.configure(api_key=api_key)
 
 # --- 3. System Prompt (English Version) ---
-# This prompts the AI to act based on the student's language
 SYSTEM_PROMPT = """
 You are the elite HSK1 Grammar Teaching Assistant for "Long Wen Chinese School" (龙文中文学校).
 Your sole purpose is to challenge students on **Unit 11 Grammar Points**.
@@ -86,4 +85,14 @@ if prompt := st.chat_input("Type your answer here..."):
         try:
             # Start session if needed
             if "chat_session" not in st.session_state:
-                st.session_state.
+                st.session_state.chat_session = model.start_chat(history=[])
+            
+            # Send message to AI
+            response = st.session_state.chat_session.send_message(prompt)
+            
+            # Display Result
+            message_placeholder.markdown(response.text)
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
+            
+        except Exception as e:
+            st.error(f"Error: {e}")
