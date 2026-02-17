@@ -71,14 +71,15 @@ generation_config = {
     "max_output_tokens": 2048,
 }
 
-# --- 关键修改：使用 gemini-pro 以确保稳定性 ---
+# --- 初始化模型 (Flash) ---
 try:
     model = genai.GenerativeModel(
-        model_name="gemini-pro", 
-        generation_config=generation_config
+        model_name="gemini-1.5-flash", 
+        generation_config=generation_config,
+        system_instruction=SYSTEM_PROMPT
     )
 except Exception as e:
-    st.error(f"模型初始化失败: {e}")
+    st.error(f"模型初始化配置错误: {e}")
     st.stop()
 
 # --- 4. 界面逻辑 ---
@@ -89,15 +90,15 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
     # 强制开场
     try:
-        chat = model.start_chat(history=[
-            {"role": "user", "parts": ["SYSTEM INSTRUCTION: " + SYSTEM_PROMPT + "\n\n Please start the challenge now."]},
-            {"role": "model", "parts": ["你好！准备好接受挑战了吗？请把这句话翻译成中文：\n\n**I want to live in Beijing for 3 years.**"]}
-        ])
+        chat = model.start_chat(history=[])
+        # 发送空消息触发 System Prompt
+        response = chat.send_message("Let's start the challenge.") 
         st.session_state.chat_session = chat
-        # 将预设的开场白加入显示历史
-        st.session_state.messages.append({"role": "assistant", "content": chat.history[-1].parts[0].text})
+        # 将 AI 的回应加入历史
+        st.session_state.messages.append({"role": "assistant", "content": response.text})
     except Exception as e:
-        st.error(f"连接失败，请刷新: {e}")
+        # 如果开场失败，显示更友好的错误
+        st.error(f"连接 AI 失败，请检查 API Key 或刷新页面。\n详细错误: {e}")
 
 # 显示消息
 for message in st.session_state.messages:
