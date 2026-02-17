@@ -1,120 +1,51 @@
 import streamlit as st
-import os
 import google.generativeai as genai
+import os
 
-# --- 1. 配置页面 ---
-st.set_page_config(
-    page_title="龙文中文学校 - HSK1 语法挑战",
-    page_icon="🐲",
-    layout="centered"
-)
+st.set_page_config(page_title="系统诊断模式", page_icon="🛠️")
+st.title("🛠️ 龙文 AI 故障诊断")
 
-# --- 2. 获取 API Key ---
+# 1. 检查 API Key
 api_key = os.environ.get("GOOGLE_API_KEY")
-
 if not api_key:
-    st.error("⚠️ 未检测到 API Key。请在 Render 后台 Settings -> Environment Variables 中设置 GOOGLE_API_KEY。")
+    st.error("❌ 严重错误：API Key 未找到！请检查 Render 环境变量。")
     st.stop()
+else:
+    # 只显示前几位，确保安全
+    st.success(f"✅ API Key 已检测到 (开头: {api_key[:4]}...)")
 
-# --- 3. 初始化模型 ---
-genai.configure(api_key=api_key)
-
-# 核心指令
-SYSTEM_PROMPT = """
-### 1. 核心身份与模式
-你是“龙文中文学校”的 HSK1 专属助教。
-**你的当前模式：主动挑战者 (Active Challenger)。**
-你**不等待**学生提问，而是**主动**给学生出题。
-
-**🌍 语言规则:**
-* **出题语言：** 用学生的母语（英语或西班牙语）给出题目。
-* **目标语言：** 要求学生翻译成中文。
-* **自适应：** 如果学生用西语跟你打招呼，你就用西语出题；如果用英语，就用英语。
-
-### 2. 教学流程
-1.  **开场:** 当对话开始时，立刻抛出一个 Unit 11 的翻译挑战。
-2.  **出题逻辑:** 随机从下面的【挑战库】中选择一个题目。
-3.  **纠错:** * ❌ 错：严禁直接给答案。引用老师的规则引导修正。
-    * ✅ 对：必须具体表扬他的**语序**，然后出下一题。
-
-### 3. 三大语法挑战库 (Unit 11)
-*注意：不包含过去式“了”，时长题目基于“想/要”结构。*
-
-#### 🟢 挑战 A：特殊疑问句
-* **目标：** 疑问词不移位 (Question words do not move)。
-* **题目：**
-    1. "What time do you go to school?" (你几点去学校？)
-    2. "When do you go home?" (你什么时候回家？)
-    3. "Who goes to work at 8 o'clock?" (谁八点去工作？)
-
-#### 🔵 挑战 B：...前 (Time/Action + Qian)
-* **目标：** “前”放在后面 (Tail)。
-* **题目：**
-    1. "I want to go home before 5 o'clock." (五点前我想回家。)
-    2. "Before Saturday, I want to buy a book." (星期六前我想买书。)
-    3. "Before going to the store, I want to drink water." (去商店前我想喝水。)
-
-#### 🟠 挑战 C：时间段 (Duration)
-* **目标：** Verb + Duration (时长紧跟动词)。
-* **题目：**
-    1. "I want to live in Beijing for 3 years." (我想在北京住三年。)
-    2. "She wants to work for 6 months." (她想工作六个月。)
-    3. "I want to study Chinese for one month." (我想学一个月汉语。)
-
-### 4. 词汇白名单 (Unit 1-11 Only)
-严禁使用 Unit 11 之后的生词。
-"""
-
-# 配置参数
-generation_config = {
-    "temperature": 0.7,
-    "max_output_tokens": 2048,
-}
-
-# --- 初始化模型 (Flash) ---
+# 2. 检查 Google 库版本
 try:
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash", 
-        generation_config=generation_config,
-        system_instruction=SYSTEM_PROMPT
-    )
+    version = genai.__version__
+    st.info(f"📦 Google 工具包版本: {version}")
+    if version < "0.7.2":
+        st.warning("⚠️ 警告：版本过旧！Render 缓存可能未清除成功。")
+except:
+    st.warning("⚠️ 无法检测版本号")
+
+# 3. 核心测试：列出可用模型
+st.markdown("### 📋 服务器能看到的模型列表：")
+st.write("正在连接 Google 服务器查询...")
+
+try:
+    genai.configure(api_key=api_key)
+    # 获取所有模型
+    models = list(genai.list_models())
+    
+    found_chat_model = False
+    
+    for m in models:
+        # 只要是支持“生成内容”的模型，都列出来
+        if 'generateContent' in m.supported_generation_methods:
+            st.code(f"可用: {m.name}")
+            found_chat_model = True
+            
+    if not found_chat_model:
+        st.error("❌ 连接成功，但没有找到任何可用模型！")
+        st.error("👉 诊断结论：这通常是因为 Render 服务器在【欧洲(Frankfurt)】，被 Google 限制了。请尝试重建一个在美国 (Oregon) 的 Render 服务。")
+    else:
+        st.balloons()
+        st.success("✅ 测试通过！请把上面列表里绿色的名字发给 Gemini，修改代码即可。")
+
 except Exception as e:
-    st.error(f"模型初始化配置错误: {e}")
-    st.stop()
-
-# --- 4. 界面逻辑 ---
-st.title("🐲 龙文 HSK1 语法挑战者")
-
-# 初始化历史
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-    # 强制开场
-    try:
-        chat = model.start_chat(history=[])
-        # 发送空消息触发 System Prompt
-        response = chat.send_message("Let's start the challenge.") 
-        st.session_state.chat_session = chat
-        # 将 AI 的回应加入历史
-        st.session_state.messages.append({"role": "assistant", "content": response.text})
-    except Exception as e:
-        # 如果开场失败，显示更友好的错误
-        st.error(f"连接 AI 失败，请检查 API Key 或刷新页面。\n详细错误: {e}")
-
-# 显示消息
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# 处理输入
-if prompt := st.chat_input("请输入你的答案..."):
-    st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        try:
-            response = st.session_state.chat_session.send_message(prompt)
-            message_placeholder.markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
-        except Exception as e:
-            message_placeholder.markdown(f"出错啦: {e}")
+    st.error(f"❌ 连接彻底失败。错误信息：\n{e}")
