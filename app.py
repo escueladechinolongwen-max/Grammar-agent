@@ -1,51 +1,78 @@
 import streamlit as st
-import google.generativeai as genai
 import os
+import google.generativeai as genai
 
-st.set_page_config(page_title="系统诊断模式", page_icon="🛠️")
-st.title("🛠️ 龙文 AI 故障诊断")
+# --- 1. 配置页面 ---
+st.set_page_config(
+    page_title="龙文中文学校 - HSK1 语法挑战",
+    page_icon="🐲",
+    layout="centered"
+)
 
-# 1. 检查 API Key
+# --- 2. 获取 API Key ---
 api_key = os.environ.get("GOOGLE_API_KEY")
+
 if not api_key:
-    st.error("❌ 严重错误：API Key 未找到！请检查 Render 环境变量。")
+    st.error("⚠️ 未检测到 API Key。请在 Render 后台设置。")
     st.stop()
-else:
-    # 只显示前几位，确保安全
-    st.success(f"✅ API Key 已检测到 (开头: {api_key[:4]}...)")
 
-# 2. 检查 Google 库版本
+# --- 3. 初始化模型 ---
+genai.configure(api_key=api_key)
+
+# 核心指令
+SYSTEM_PROMPT = """
+你是“龙文中文学校”的 HSK1 专属助教。
+目标：引导学生完成 Unit 11 语法挑战。
+规则：
+1. 始终先给出一个翻译挑战（中/英/西自适应）。
+2. 做对时表扬语序。
+3. 做错时引用老师的规则引导。
+4. 严禁使用 Unit 11 之后的词汇。
+"""
+
+# 配置参数
+generation_config = {
+    "temperature": 0.7,
+    "max_output_tokens": 2048,
+}
+
+# --- 关键修改：使用诊断列表中确认可用的 2.0 模型 ---
 try:
-    version = genai.__version__
-    st.info(f"📦 Google 工具包版本: {version}")
-    if version < "0.7.2":
-        st.warning("⚠️ 警告：版本过旧！Render 缓存可能未清除成功。")
-except:
-    st.warning("⚠️ 无法检测版本号")
-
-# 3. 核心测试：列出可用模型
-st.markdown("### 📋 服务器能看到的模型列表：")
-st.write("正在连接 Google 服务器查询...")
-
-try:
-    genai.configure(api_key=api_key)
-    # 获取所有模型
-    models = list(genai.list_models())
-    
-    found_chat_model = False
-    
-    for m in models:
-        # 只要是支持“生成内容”的模型，都列出来
-        if 'generateContent' in m.supported_generation_methods:
-            st.code(f"可用: {m.name}")
-            found_chat_model = True
-            
-    if not found_chat_model:
-        st.error("❌ 连接成功，但没有找到任何可用模型！")
-        st.error("👉 诊断结论：这通常是因为 Render 服务器在【欧洲(Frankfurt)】，被 Google 限制了。请尝试重建一个在美国 (Oregon) 的 Render 服务。")
-    else:
-        st.balloons()
-        st.success("✅ 测试通过！请把上面列表里绿色的名字发给 Gemini，修改代码即可。")
-
+    model = genai.GenerativeModel(
+        model_name="gemini-2.0-flash", 
+        generation_config=generation_config,
+        system_instruction=SYSTEM_PROMPT
+    )
 except Exception as e:
-    st.error(f"❌ 连接彻底失败。错误信息：\n{e}")
+    st.error(f"模型配置错误: {e}")
+    st.stop()
+
+# --- 4. 界面逻辑 ---
+st.title("🐲 龙文 HSK1 语法挑战者")
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    try:
+        chat = model.start_chat(history=[])
+        st.session_state.chat_session = chat
+        # 主动触发开场白
+        response = chat.send_message("Please start the challenge now.")
+        st.session_state.messages.append({"role": "assistant", "content": response.text})
+    except Exception as e:
+        st.error(f"连接失败: {e}")
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+if prompt := st.chat_input("请输入你的答案..."):
+    st.chat_message("user").markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    with st.chat_message("assistant"):
+        try:
+            response = st.session_state.chat_session.send_message(prompt)
+            st.markdown(response.text)
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
+        except Exception as e:
+            st.markdown(f"出错啦: {e}")
