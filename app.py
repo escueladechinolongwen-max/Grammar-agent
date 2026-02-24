@@ -5,6 +5,7 @@ import asyncio
 import edge_tts
 import tempfile
 import re
+import random  # 用于随机抽取钥匙
 from streamlit_mic_recorder import speech_to_text
 
 # --- 1. 页面与全局配置 ---
@@ -14,12 +15,24 @@ st.set_page_config(
     layout="wide"
 )
 
-api_key = os.environ.get("GOOGLE_API_KEY")
-if not api_key:
-    st.error("⚠️ Error: API Key not found.")
+# ==========================================
+# 🔑 核心魔法：智能密钥轮询池 (API Key Pooling)
+# ==========================================
+raw_keys = os.environ.get("GOOGLE_API_KEY")
+if not raw_keys:
+    st.error("⚠️ Error: API Key not found. Please set GOOGLE_API_KEY in Render.")
     st.stop()
 
-genai.configure(api_key=api_key)
+# 自动把 Render 里用逗号隔开的多把钥匙拆分出来
+API_KEYS = [k.strip() for k in raw_keys.split(",") if k.strip()]
+
+if not API_KEYS:
+    st.error("⚠️ Error: No valid API Keys found.")
+    st.stop()
+
+# 每次发送消息时，随机抽一把钥匙，完美分摊流量，绕过死锁！
+selected_key = random.choice(API_KEYS)
+genai.configure(api_key=selected_key)
 
 # ==========================================
 # 📚 核心知识库 & 剧本库 (Knowledge & Scenarios)
@@ -64,7 +77,6 @@ VOICE_OPTIONS = {
     "🇬🇧 Guy (英语 - 男声)": "en-US-GuyNeural"
 }
 
-# 🌟 新增：支持传入 rate (语速) 参数
 def generate_tts_audio(text, voice_code, rate="+0%"):
     async def _generate():
         communicate = edge_tts.Communicate(text, voice_code, rate=rate)
@@ -108,11 +120,9 @@ with st.sidebar:
         
     st.markdown("---")
     
-    # 语音与语速选择
     selected_voice_label = st.selectbox(lbl_voice, options=list(VOICE_OPTIONS.keys()))
     selected_voice_code = VOICE_OPTIONS[selected_voice_label]
     
-    # 🌟 新增：语速选择器
     speed_labels = ["🐢 Slow / Lento (-25%)", "🚶 Normal", "🏃 Fast / Rápido (+20%)"]
     speed_values = ["-25%", "+0%", "+20%"]
     selected_speed_index = st.selectbox(lbl_speed, range(len(speed_labels)), index=1, format_func=lambda x: speed_labels[x])
@@ -270,7 +280,6 @@ if prompt:
             if audio_texts:
                 with st.spinner("🎵 Generating voice..." if ui_lang == "English" else "🎵 Generando voz..."):
                     text_to_speak = "。".join(audio_texts)
-                    # 🌟 传入语速参数
                     audio_file_path = generate_tts_audio(text_to_speak, selected_voice_code, selected_speed_rate)
                     st.audio(audio_file_path, format="audio/mp3", autoplay=True) 
 
