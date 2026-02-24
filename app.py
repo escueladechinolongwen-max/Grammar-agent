@@ -4,6 +4,7 @@ import google.generativeai as genai
 import asyncio
 import edge_tts
 import tempfile
+import re  # 新增：用于提取音频标签的正则表达式库
 from streamlit_mic_recorder import speech_to_text
 
 # --- 1. 页面与全局配置 ---
@@ -28,7 +29,7 @@ KNOWLEDGE_BASE = {
     "u2": {"title_en": "Unit 2: Names & Apologies", "title_es": "Unidad 2: Nombres y disculpas", "grammar": "1. 对不起 vs 没关系. 2. 什么 (What) 放动词后.", "vocab": "叫, 什么, 名字, 是, 老师, 吗, 学生, 人, 对不起, 没关系"},
     "u3": {"title_en": "Unit 3: Nationality & SVO", "title_es": "Unidad 3: Nacionalidad y Estructura SVO", "grammar": "1. 国家+人. 2. 严格 SVO 结构. 3. 否定词'不'在动词前.", "vocab": "有, 个, 爸爸, 妈妈, 哥哥, 弟弟, 妹妹, 和, 没, 不"},
     "u4": {"title_en": "Unit 4: Particles 'de' & 'ne'", "title_es": "Unidad 4: Partículas 'de' y 'ne'", "grammar": "1. 归属词 '的'. 2. 疑问词 '呢' (你的呢?). 3. 哪国不倒装.", "vocab": "他, 她, 谁, 的, 汉语, 哪, 国, 呢, 同学, 朋友"},
-    "u5": {"title_en": "Unit 5: Numbers & Measure Words", "title_es": "Unidad 5: Números y Clasificadores", "grammar": "1. 必须使用量词 (Number+MW+Noun). 2. '几'的用法.", "vocab": "几, 岁, 了, 今年, 多, 大, 两, 个, 口"},
+    "u5": {"title_en": "Unit 5: Numbers & Measure Words", "title_es": "Unidad 5: Números y Clasificadores", "grammar": "1. 必须使用量词 (Number+MW+Noun). 2. '几'的用法.", "vocab": "几, 岁, 了, 今年, 多, 大, 两, 个, 口, 狗, 猫, 杯子, 朋友"}, # 增加了几个常用名词防超纲
     "u6": {"title_en": "Unit 6: 'hui' & 'zenme'", "title_es": "Unidad 6: 'hui' y 'zenme'", "grammar": "1. 会 (can). 2. 怎么 (how to).", "vocab": "会, 说, 菜, 很, 好吃, 做, 写, 汉字, 字, 怎么, 读"},
     "u7": {"title_en": "Unit 7: Dates & 'qu'", "title_es": "Unidad 7: Fechas y 'qu' (ir)", "grammar": "1. 时间从大到小. 2. 去+地点.", "vocab": "请, 问, 今天, 号, 月, 星期, 昨天, 明天, 去, 学校, 看, 书"},
     "u8": {"title_en": "Unit 8: 'xiang' & Prices", "title_es": "Unidad 8: 'xiang' y Precios", "grammar": "1. 想 (want to). 2. 多少钱 (how much).", "vocab": "想, 喝, 茶, 吃, 米饭, 下午, 商店, 买, 个, 杯子, 这, 多少, 钱, 块, 那"},
@@ -54,7 +55,6 @@ SCENARIOS = {
     }
 }
 
-# 🎙️ 语音库映射字典 (Voice Library)
 VOICE_OPTIONS = {
     "🇨🇳 晓晓 (Xiaoxiao - 女声)": "zh-CN-XiaoxiaoNeural",
     "🇨🇳 云希 (Yunxi - 男声)": "zh-CN-YunxiNeural",
@@ -64,7 +64,6 @@ VOICE_OPTIONS = {
     "🇬🇧 Guy (英语 - 男声)": "en-US-GuyNeural"
 }
 
-# 异步生成音频函数
 def generate_tts_audio(text, voice_code):
     async def _generate():
         communicate = edge_tts.Communicate(text, voice_code)
@@ -106,7 +105,6 @@ with st.sidebar:
         
     st.markdown("---")
     
-    # 语音选择器
     selected_voice_label = st.selectbox(lbl_voice, options=list(VOICE_OPTIONS.keys()))
     selected_voice_code = VOICE_OPTIONS[selected_voice_label]
     
@@ -143,20 +141,37 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
     You are a STRICT Chinese Grammar Teacher. {LANGUAGE_PROTOCOL}
     **Unit Focus**: {unit_focus_name}
     **Grammar Rules**: {current_unit_data['grammar']}
+    
+    **🛑 STRICT VOCABULARY LIMIT (CRITICAL)**: 
+    You are ONLY allowed to use the following words for sentences: {current_unit_data['vocab']}. 
+    NEVER use words outside HSK 1. NEVER use words like "chicken" (鸡) or "bird" (鸟). If you need a noun, pick one strictly from the list!
+    
     **Workflow**: When user says "Hi", reply in {ui_lang}: "Let's test the grammar. We will do 10 sentences. Sentence 1: [translation challenge]."
-    **Penalty**: If they mistake, explain via scaffolding. Generate 2 PENALTY sentences using the same structure before advancing.
+    **Penalty**: If they mistake, explain via scaffolding. Generate 2 PENALTY sentences using the same structure. The penalty sentences MUST strictly follow the Vocabulary Limit!
+    
+    **🎙️ AUDIO TAGGING (CRITICAL)**: Whenever you provide a complete Chinese sentence (for practice, correction, or example), you MUST wrap the Chinese characters in <audio> tags so the voice engine can read them. 
+    Example: <audio>我有一只猫。</audio>
+    Do NOT wrap English/Spanish words in audio tags.
     """
     header_text = f"🧑‍🏫 {unit_focus_name}"
     welcome_text = "Say **'Hi'** to start your 10-sentence challenge!" if ui_lang == "English" else "¡Di **'Hola'** para comenzar el reto!"
 
 elif "Friend" in role_mode or "Amigo" in role_mode:
     SYSTEM_PROMPT = f"""
-    You are a friendly Chinese Language Partner. {LANGUAGE_PROTOCOL}
+    You are a friendly Chinese Language Partner engaging in a real-time conversation.
+    {LANGUAGE_PROTOCOL}
+    
+    **YOUR TASK (CRITICAL)**:
+    1. DO NOT just translate what the user says. You must REPLY to their message logically and keep the conversation going!
+    2. Example: If user says "nihaoma", you reply: "<audio>我很好，你呢？</audio>"
+    3. ALWAYS end your turn with a follow-up question to keep the chat alive.
+    
     **Level Strategy**: {hsk_level_text}. 
+    
     **Output Format**:
-    [Chinese Characters]
+    <audio>[Your conversational reply in Chinese Characters]</audio>
     ([Pinyin])
-    [{ui_lang} translation]
+    [{ui_lang} translation of your reply]
     """
     header_text = "🧑‍🤝‍🧑 Language Partner" if ui_lang == "English" else "🧑‍🤝‍🧑 Compañero de Idiomas"
     welcome_text = "Say **'Hi'** to chat!" if ui_lang == "English" else "¡Di **'Hola'** para charlar!"
@@ -170,87 +185,7 @@ else:
     You are playing a role in a simulation. {LANGUAGE_PROTOCOL}
     **Your Persona**: {current_scenario['npc_prompt']}
     **User's Mission**: {mission_text}
-    **Rules**: Never break character. End scenario gracefully if mission is completed.
+    **Rules**: Never break character. Reply to the user logically. End scenario gracefully if mission is completed.
+    
     **Output Format**:
-    [Chinese Characters]
-    ([Pinyin])
-    [{ui_lang} translation]
-    """
-    header_text = f"🎬 {scenario_title}"
-    welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
-
-try:
-    model = genai.GenerativeModel(model_name="gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
-except Exception as e:
-    st.error(f"Error: {e}")
-    st.stop()
-
-# --- 4. 聊天界面渲染 ---
-st.header(header_text)
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# 渲染历史消息
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-        # 如果历史消息带有音频，也渲染出来
-        if "audio_path" in message and message["audio_path"]:
-            st.audio(message["audio_path"], format="audio/mp3")
-
-if not st.session_state.messages:
-    st.info(welcome_text)
-
-# --- 5. 双向输入区 (文字 + 麦克风) ---
-col1, col2 = st.columns([5, 1])
-chat_placeholder = "Type here..." if ui_lang == "English" else "Escribe aquí..."
-spoken_text = None
-
-with col1:
-    written_text = st.chat_input(chat_placeholder)
-
-with col2:
-    # 语音转文字录音按钮 (浏览器自带，完全免费)
-    spoken_text = speech_to_text(
-        language='zh-CN', # 默认优先识别中文
-        start_prompt="🎤" if ui_lang == "English" else "🎤",
-        stop_prompt="⏹️",
-        just_once=True,
-        key='STT'
-    )
-
-# 处理用户输入（文字或语音）
-prompt = written_text or spoken_text
-
-if prompt:
-    st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        try:
-            chat = model.start_chat(history=[
-                {"role": m["role"], "parts": [m["content"]]} 
-                for m in st.session_state.messages[:-1]
-            ])
-            response = chat.send_message(prompt)
-            message_placeholder.markdown(response.text)
-            
-            # 🚀 魔法发生的地方：将 AI 的文字转成声音
-            audio_file_path = None
-            with st.spinner("🎵 Generating voice..." if ui_lang == "English" else "🎵 Generando voz..."):
-                # 为了防止报错，提取第一行中文字符发音，或者全量发音
-                text_to_speak = response.text.split('\n')[0].replace('*', '') # 简单清洗
-                if text_to_speak.strip():
-                    audio_file_path = generate_tts_audio(text_to_speak, selected_voice_code)
-                    st.audio(audio_file_path, format="audio/mp3", autoplay=True) # Autoplay 自动播放
-
-            st.session_state.messages.append({
-                "role": "assistant", 
-                "content": response.text,
-                "audio_path": audio_file_path
-            })
-            
-        except Exception as e:
-            st.error(f"Error: {e}")
+    <audio>[Chinese Characters
