@@ -4,7 +4,7 @@ import google.generativeai as genai
 import asyncio
 import edge_tts
 import tempfile
-import re  # 新增：用于提取音频标签的正则表达式库
+import re
 from streamlit_mic_recorder import speech_to_text
 
 # --- 1. 页面与全局配置 ---
@@ -29,7 +29,7 @@ KNOWLEDGE_BASE = {
     "u2": {"title_en": "Unit 2: Names & Apologies", "title_es": "Unidad 2: Nombres y disculpas", "grammar": "1. 对不起 vs 没关系. 2. 什么 (What) 放动词后.", "vocab": "叫, 什么, 名字, 是, 老师, 吗, 学生, 人, 对不起, 没关系"},
     "u3": {"title_en": "Unit 3: Nationality & SVO", "title_es": "Unidad 3: Nacionalidad y Estructura SVO", "grammar": "1. 国家+人. 2. 严格 SVO 结构. 3. 否定词'不'在动词前.", "vocab": "有, 个, 爸爸, 妈妈, 哥哥, 弟弟, 妹妹, 和, 没, 不"},
     "u4": {"title_en": "Unit 4: Particles 'de' & 'ne'", "title_es": "Unidad 4: Partículas 'de' y 'ne'", "grammar": "1. 归属词 '的'. 2. 疑问词 '呢' (你的呢?). 3. 哪国不倒装.", "vocab": "他, 她, 谁, 的, 汉语, 哪, 国, 呢, 同学, 朋友"},
-    "u5": {"title_en": "Unit 5: Numbers & Measure Words", "title_es": "Unidad 5: Números y Clasificadores", "grammar": "1. 必须使用量词 (Number+MW+Noun). 2. '几'的用法.", "vocab": "几, 岁, 了, 今年, 多, 大, 两, 个, 口, 狗, 猫, 杯子, 朋友"}, # 增加了几个常用名词防超纲
+    "u5": {"title_en": "Unit 5: Numbers & Measure Words", "title_es": "Unidad 5: Números y Clasificadores", "grammar": "1. 必须使用量词 (Number+MW+Noun). 2. '几'的用法.", "vocab": "几, 岁, 了, 今年, 多, 大, 两, 个, 口, 狗, 猫, 杯子, 朋友"},
     "u6": {"title_en": "Unit 6: 'hui' & 'zenme'", "title_es": "Unidad 6: 'hui' y 'zenme'", "grammar": "1. 会 (can). 2. 怎么 (how to).", "vocab": "会, 说, 菜, 很, 好吃, 做, 写, 汉字, 字, 怎么, 读"},
     "u7": {"title_en": "Unit 7: Dates & 'qu'", "title_es": "Unidad 7: Fechas y 'qu' (ir)", "grammar": "1. 时间从大到小. 2. 去+地点.", "vocab": "请, 问, 今天, 号, 月, 星期, 昨天, 明天, 去, 学校, 看, 书"},
     "u8": {"title_en": "Unit 8: 'xiang' & Prices", "title_es": "Unidad 8: 'xiang' y Precios", "grammar": "1. 想 (want to). 2. 多少钱 (how much).", "vocab": "想, 喝, 茶, 吃, 米饭, 下午, 商店, 买, 个, 杯子, 这, 多少, 钱, 块, 那"},
@@ -188,4 +188,84 @@ else:
     **Rules**: Never break character. Reply to the user logically. End scenario gracefully if mission is completed.
     
     **Output Format**:
-    <audio>[Chinese Characters
+    <audio>[Chinese Characters]</audio>
+    ([Pinyin])
+    [{ui_lang} translation]
+    """
+    header_text = f"🎬 {scenario_title}"
+    welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
+
+try:
+    model = genai.GenerativeModel(model_name="gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
+except Exception as e:
+    st.error(f"Error: {e}")
+    st.stop()
+
+# --- 4. 聊天界面渲染 ---
+st.header(header_text)
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        if "audio_path" in message and message["audio_path"]:
+            st.audio(message["audio_path"], format="audio/mp3")
+
+if not st.session_state.messages:
+    st.info(welcome_text)
+
+# --- 5. 双向输入区 (文字 + 麦克风) ---
+col1, col2 = st.columns([5, 1])
+chat_placeholder = "Type here..." if ui_lang == "English" else "Escribe aquí..."
+spoken_text = None
+
+with col1:
+    written_text = st.chat_input(chat_placeholder)
+
+with col2:
+    spoken_text = speech_to_text(
+        language='zh-CN',
+        start_prompt="🎤",
+        stop_prompt="⏹️",
+        just_once=True,
+        key='STT'
+    )
+
+prompt = written_text or spoken_text
+
+if prompt:
+    st.chat_message("user").markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        try:
+            chat = model.start_chat(history=[
+                {"role": m["role"], "parts": [m["content"]]} 
+                for m in st.session_state.messages[:-1]
+            ])
+            response = chat.send_message(prompt)
+            
+            # 💡 魔法发生的地方：提取 <audio> 标签内的纯中文，并隐藏界面的标签
+            audio_texts = re.findall(r'<audio>(.*?)</audio>', response.text)
+            display_text = response.text.replace('<audio>', '').replace('</audio>', '')
+            
+            message_placeholder.markdown(display_text)
+            
+            audio_file_path = None
+            if audio_texts:
+                with st.spinner("🎵 Generating voice..." if ui_lang == "English" else "🎵 Generando voz..."):
+                    text_to_speak = "。".join(audio_texts)
+                    audio_file_path = generate_tts_audio(text_to_speak, selected_voice_code)
+                    st.audio(audio_file_path, format="audio/mp3", autoplay=True) 
+
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": display_text,
+                "audio_path": audio_file_path
+            })
+            
+        except Exception as e:
+            st.error(f"Error: {e}")
