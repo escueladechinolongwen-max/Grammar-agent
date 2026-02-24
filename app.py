@@ -196,7 +196,8 @@ else:
     welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
 
 try:
-    model = genai.GenerativeModel(model_name="gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
+    # 🌟 核心修复 1：切换为极其稳定、高配额的 1.5-flash 模型
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
 except Exception as e:
     st.error(f"Error: {e}")
     st.stop()
@@ -242,13 +243,16 @@ if prompt:
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         try:
-            chat = model.start_chat(history=[
-                {"role": m["role"], "parts": [m["content"]]} 
-                for m in st.session_state.messages[:-1]
-            ])
+            # 🌟 核心修复 2：将身份字典安全转换为 Google 支持的格式
+            safe_history = []
+            for m in st.session_state.messages[:-1]:
+                role_name = "model" if m["role"] == "assistant" else "user"
+                safe_history.append({"role": role_name, "parts": [m["content"]]})
+                
+            chat = model.start_chat(history=safe_history)
             response = chat.send_message(prompt)
             
-            # 💡 魔法发生的地方：提取 <audio> 标签内的纯中文，并隐藏界面的标签
+            # 提取音频标签内的纯中文
             audio_texts = re.findall(r'<audio>(.*?)</audio>', response.text)
             display_text = response.text.replace('<audio>', '').replace('</audio>', '')
             
