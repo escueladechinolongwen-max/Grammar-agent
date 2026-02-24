@@ -64,9 +64,10 @@ VOICE_OPTIONS = {
     "🇬🇧 Guy (英语 - 男声)": "en-US-GuyNeural"
 }
 
-def generate_tts_audio(text, voice_code):
+# 🌟 新增：支持传入 rate (语速) 参数
+def generate_tts_audio(text, voice_code, rate="+0%"):
     async def _generate():
-        communicate = edge_tts.Communicate(text, voice_code)
+        communicate = edge_tts.Communicate(text, voice_code, rate=rate)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
             temp_path = fp.name
         await communicate.save(temp_path)
@@ -86,7 +87,8 @@ with st.sidebar:
         lbl_unit = "📖 Select Unit:"
         lbl_level = "📊 Friend's Level:"
         lbl_scenario = "🎬 Select Scenario:"
-        lbl_voice = "🗣️ AI Voice Selection:"
+        lbl_voice = "🗣️ AI Voice:"
+        lbl_speed = "⏱️ Voice Speed:"
         level_options = ["HSK 1", "HSK 2", "HSK 3", "🌟 Adaptive Mode"]
     else:
         st.title("🐲 Centro Long Wen")
@@ -97,6 +99,7 @@ with st.sidebar:
         lbl_level = "📊 Nivel del amigo:"
         lbl_scenario = "🎬 Elige el escenario:"
         lbl_voice = "🗣️ Voz de la IA:"
+        lbl_speed = "⏱️ Velocidad de Voz:"
         level_options = ["HSK 1", "HSK 2", "HSK 3", "🌟 Modo Adaptativo"]
 
     if st.button(btn_clear, use_container_width=True):
@@ -105,8 +108,15 @@ with st.sidebar:
         
     st.markdown("---")
     
+    # 语音与语速选择
     selected_voice_label = st.selectbox(lbl_voice, options=list(VOICE_OPTIONS.keys()))
     selected_voice_code = VOICE_OPTIONS[selected_voice_label]
+    
+    # 🌟 新增：语速选择器
+    speed_labels = ["🐢 Slow / Lento (-25%)", "🚶 Normal", "🏃 Fast / Rápido (+20%)"]
+    speed_values = ["-25%", "+0%", "+20%"]
+    selected_speed_index = st.selectbox(lbl_speed, range(len(speed_labels)), index=1, format_func=lambda x: speed_labels[x])
+    selected_speed_rate = speed_values[selected_speed_index]
     
     st.markdown("---")
     role_mode = st.radio(lbl_mode, mode_options)
@@ -149,9 +159,10 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
     **Workflow**: When user says "Hi", reply in {ui_lang}: "Let's test the grammar. We will do 10 sentences. Sentence 1: [translation challenge]."
     **Penalty**: If they mistake, explain via scaffolding. Generate 2 PENALTY sentences using the same structure. The penalty sentences MUST strictly follow the Vocabulary Limit!
     
-    **🎙️ AUDIO TAGGING (CRITICAL)**: Whenever you provide a complete Chinese sentence (for practice, correction, or example), you MUST wrap the Chinese characters in <audio> tags so the voice engine can read them. 
-    Example: <audio>我有一只猫。</audio>
-    Do NOT wrap English/Spanish words in audio tags.
+    **OUTPUT FORMAT (STRICT 3 LINES RULE)**: 
+    Line 1: <audio>[ALL Chinese characters here ONLY]</audio>
+    Line 2: [Pinyin here]
+    Line 3: [English/Spanish translation here]
     """
     header_text = f"🧑‍🏫 {unit_focus_name}"
     welcome_text = "Say **'Hi'** to start your 10-sentence challenge!" if ui_lang == "English" else "¡Di **'Hola'** para comenzar el reto!"
@@ -167,10 +178,10 @@ elif "Friend" in role_mode or "Amigo" in role_mode:
     
     **Level Strategy**: {hsk_level_text}. 
     
-    **OUTPUT FORMAT (CRITICAL: DO NOT MIX LANGUAGES IN ONE LINE. STRICTLY SEPARATE INTO 3 LINES)**:
-    <audio>[Your ENTIRE response in pure Chinese characters ONLY]</audio>
-    [The ENTIRE Pinyin for your response]
-    [The ENTIRE {ui_lang} translation for your response]
+    **OUTPUT FORMAT (CRITICAL: STRICTLY 3 LINES. NO EXCEPTIONS.)**:
+    Line 1: <audio>[ALL of your Chinese characters here, INCLUDING your follow-up question. Do not leave any Chinese outside this tag!]</audio>
+    Line 2: [The ENTIRE Pinyin for Line 1]
+    Line 3: [The ENTIRE {ui_lang} translation for Line 1]
     """
     header_text = "🧑‍🤝‍🧑 Language Partner" if ui_lang == "English" else "🧑‍🤝‍🧑 Compañero de Idiomas"
     welcome_text = "Say **'Hi'** to chat!" if ui_lang == "English" else "¡Di **'Hola'** para charlar!"
@@ -186,10 +197,10 @@ else:
     **User's Mission**: {mission_text}
     **Rules**: Never break character. Reply to the user logically. End scenario gracefully if mission is completed.
     
-    **OUTPUT FORMAT (CRITICAL: DO NOT MIX LANGUAGES IN ONE LINE. STRICTLY SEPARATE INTO 3 LINES)**:
-    <audio>[Your ENTIRE response in pure Chinese characters ONLY]</audio>
-    [The ENTIRE Pinyin for your response]
-    [The ENTIRE {ui_lang} translation for your response]
+    **OUTPUT FORMAT (CRITICAL: STRICTLY 3 LINES. NO EXCEPTIONS.)**:
+    Line 1: <audio>[ALL of your Chinese characters here, INCLUDING any questions. Do not leave any Chinese outside this tag!]</audio>
+    Line 2: [The ENTIRE Pinyin for Line 1]
+    Line 3: [The ENTIRE {ui_lang} translation for Line 1]
     """
     header_text = f"🎬 {scenario_title}"
     welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
@@ -259,7 +270,8 @@ if prompt:
             if audio_texts:
                 with st.spinner("🎵 Generating voice..." if ui_lang == "English" else "🎵 Generando voz..."):
                     text_to_speak = "。".join(audio_texts)
-                    audio_file_path = generate_tts_audio(text_to_speak, selected_voice_code)
+                    # 🌟 传入语速参数
+                    audio_file_path = generate_tts_audio(text_to_speak, selected_voice_code, selected_speed_rate)
                     st.audio(audio_file_path, format="audio/mp3", autoplay=True) 
 
             st.session_state.messages.append({
