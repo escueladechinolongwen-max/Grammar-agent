@@ -163,15 +163,14 @@ elif "Friend" in role_mode or "Amigo" in role_mode:
     
     **YOUR TASK (CRITICAL)**:
     1. DO NOT just translate what the user says. You must REPLY to their message logically and keep the conversation going!
-    2. Example: If user says "nihaoma", you reply: "<audio>我很好，你呢？</audio>"
-    3. ALWAYS end your turn with a follow-up question to keep the chat alive.
+    2. ALWAYS end your turn with a follow-up question to keep the chat alive.
     
     **Level Strategy**: {hsk_level_text}. 
     
-    **Output Format**:
-    <audio>[Your conversational reply in Chinese Characters]</audio>
-    ([Pinyin])
-    [{ui_lang} translation of your reply]
+    **OUTPUT FORMAT (CRITICAL: DO NOT MIX LANGUAGES IN ONE LINE. STRICTLY SEPARATE INTO 3 LINES)**:
+    <audio>[Your ENTIRE response in pure Chinese characters ONLY]</audio>
+    [The ENTIRE Pinyin for your response]
+    [The ENTIRE {ui_lang} translation for your response]
     """
     header_text = "🧑‍🤝‍🧑 Language Partner" if ui_lang == "English" else "🧑‍🤝‍🧑 Compañero de Idiomas"
     welcome_text = "Say **'Hi'** to chat!" if ui_lang == "English" else "¡Di **'Hola'** para charlar!"
@@ -187,16 +186,15 @@ else:
     **User's Mission**: {mission_text}
     **Rules**: Never break character. Reply to the user logically. End scenario gracefully if mission is completed.
     
-    **Output Format**:
-    <audio>[Chinese Characters]</audio>
-    ([Pinyin])
-    [{ui_lang} translation]
+    **OUTPUT FORMAT (CRITICAL: DO NOT MIX LANGUAGES IN ONE LINE. STRICTLY SEPARATE INTO 3 LINES)**:
+    <audio>[Your ENTIRE response in pure Chinese characters ONLY]</audio>
+    [The ENTIRE Pinyin for your response]
+    [The ENTIRE {ui_lang} translation for your response]
     """
     header_text = f"🎬 {scenario_title}"
     welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
 
 try:
-    # 🌟 回归正确模型：使用最新的官方合规引擎 2.0-flash
     model = genai.GenerativeModel(model_name="gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
 except Exception as e:
     st.error(f"Error: {e}")
@@ -243,7 +241,6 @@ if prompt:
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         try:
-            # 🌟 核心修复 2：安全转换用户历史，彻底终结 429 内部死循环 Bug
             safe_history = []
             for m in st.session_state.messages[:-1]:
                 role_name = "model" if m["role"] == "assistant" else "user"
@@ -253,7 +250,7 @@ if prompt:
             response = chat.send_message(prompt)
             
             # 提取音频标签内的纯中文
-            audio_texts = re.findall(r'<audio>(.*?)</audio>', response.text)
+            audio_texts = re.findall(r'<audio>(.*?)</audio>', response.text, flags=re.DOTALL)
             display_text = response.text.replace('<audio>', '').replace('</audio>', '')
             
             message_placeholder.markdown(display_text)
