@@ -1,6 +1,10 @@
 import streamlit as st
 import os
 import google.generativeai as genai
+import asyncio
+import edge_tts
+import tempfile
+from streamlit_mic_recorder import speech_to_text
 
 # --- 1. 页面与全局配置 ---
 st.set_page_config(
@@ -32,7 +36,6 @@ KNOWLEDGE_BASE = {
     "u10_15": {"title_en": "Units 10-15: Comprehensive", "title_es": "Unidades 10-15: Repaso general", "grammar": "综合复习", "vocab": "HSK1 全部词汇"}
 }
 
-# 🎬 新增：剧本库
 SCENARIOS = {
     "cafe": {
         "title_en": "☕ At the Cafe", "title_es": "☕ En la cafetería",
@@ -51,10 +54,29 @@ SCENARIOS = {
     }
 }
 
+# 🎙️ 语音库映射字典 (Voice Library)
+VOICE_OPTIONS = {
+    "🇨🇳 晓晓 (Xiaoxiao - 女声)": "zh-CN-XiaoxiaoNeural",
+    "🇨🇳 云希 (Yunxi - 男声)": "zh-CN-YunxiNeural",
+    "🇪🇸 Elvira (西班牙语 - 女声)": "es-ES-ElviraNeural",
+    "🇪🇸 Álvaro (西班牙语 - 男声)": "es-ES-AlvaroNeural",
+    "🇬🇧 Jenny (英语 - 女声)": "en-US-JennyNeural",
+    "🇬🇧 Guy (英语 - 男声)": "en-US-GuyNeural"
+}
+
+# 异步生成音频函数
+def generate_tts_audio(text, voice_code):
+    async def _generate():
+        communicate = edge_tts.Communicate(text, voice_code)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+            temp_path = fp.name
+        await communicate.save(temp_path)
+        return temp_path
+    return asyncio.run(_generate())
+
 # --- 2. 侧边栏 UI 设置 ---
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/dragon.png", width=80)
-    
     ui_lang = st.radio("🌐 UI Language / Idioma:", ["English", "Español"], horizontal=True)
     
     if ui_lang == "English":
@@ -65,6 +87,7 @@ with st.sidebar:
         lbl_unit = "📖 Select Unit:"
         lbl_level = "📊 Friend's Level:"
         lbl_scenario = "🎬 Select Scenario:"
+        lbl_voice = "🗣️ AI Voice Selection:"
         level_options = ["HSK 1", "HSK 2", "HSK 3", "🌟 Adaptive Mode"]
     else:
         st.title("🐲 Centro Long Wen")
@@ -74,6 +97,7 @@ with st.sidebar:
         lbl_unit = "📖 Elige la unidad:"
         lbl_level = "📊 Nivel del amigo:"
         lbl_scenario = "🎬 Elige el escenario:"
+        lbl_voice = "🗣️ Voz de la IA:"
         level_options = ["HSK 1", "HSK 2", "HSK 3", "🌟 Modo Adaptativo"]
 
     if st.button(btn_clear, use_container_width=True):
@@ -81,10 +105,15 @@ with st.sidebar:
         st.rerun()
         
     st.markdown("---")
+    
+    # 语音选择器
+    selected_voice_label = st.selectbox(lbl_voice, options=list(VOICE_OPTIONS.keys()))
+    selected_voice_code = VOICE_OPTIONS[selected_voice_label]
+    
+    st.markdown("---")
     role_mode = st.radio(lbl_mode, mode_options)
     st.markdown("---")
     
-    # 动态二级菜单
     selected_unit_key, hsk_level_text, selected_scenario_key = None, None, None
     
     if "Teacher" in role_mode or "Profesor" in role_mode:
@@ -93,10 +122,8 @@ with st.sidebar:
         selected_level_index = st.selectbox(lbl_level, options=range(len(level_options)), format_func=lambda x: level_options[x])
         hsk_level_text = level_options[selected_level_index]
     else:
-        # 新增：角色扮演的下拉菜单
         selected_scenario_key = st.selectbox(lbl_scenario, options=list(SCENARIOS.keys()), format_func=lambda x: SCENARIOS[x]["title_en"] if ui_lang == "English" else SCENARIOS[x]["title_es"])
 
-    # 切换配置自动清空历史
     current_config = f"{role_mode}_{selected_unit_key}_{hsk_level_text}_{selected_scenario_key}_{ui_lang}"
     if "last_config" not in st.session_state:
         st.session_state.last_config = current_config
@@ -107,10 +134,7 @@ with st.sidebar:
         st.rerun()
 
 # --- 3. 动态构建 AI 大脑 ---
-LANGUAGE_PROTOCOL = f"""
-**CRITICAL UI LANGUAGE**: 
-The user's interface is **{ui_lang}**. Communicate with the user in {ui_lang} (except for the Chinese).
-"""
+LANGUAGE_PROTOCOL = f"**CRITICAL UI LANGUAGE**: The user's interface is **{ui_lang}**. Communicate with the user in {ui_lang} (except for the Chinese)."
 
 if "Teacher" in role_mode or "Profesor" in role_mode:
     current_unit_data = KNOWLEDGE_BASE[selected_unit_key]
@@ -128,7 +152,7 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
 elif "Friend" in role_mode or "Amigo" in role_mode:
     SYSTEM_PROMPT = f"""
     You are a friendly Chinese Language Partner. {LANGUAGE_PROTOCOL}
-    **Level Strategy**: {hsk_level_text}. (If Adaptive, start simple, upgrade if they use complex structures, downgrade if they struggle).
+    **Level Strategy**: {hsk_level_text}. 
     **Output Format**:
     [Chinese Characters]
     ([Pinyin])
@@ -138,7 +162,6 @@ elif "Friend" in role_mode or "Amigo" in role_mode:
     welcome_text = "Say **'Hi'** to chat!" if ui_lang == "English" else "¡Di **'Hola'** para charlar!"
 
 else:
-    # 新增：角色扮演的大脑指令
     current_scenario = SCENARIOS[selected_scenario_key]
     scenario_title = current_scenario["title_en"] if ui_lang == "English" else current_scenario["title_es"]
     mission_text = current_scenario["mission_en"] if ui_lang == "English" else current_scenario["mission_es"]
@@ -147,12 +170,7 @@ else:
     You are playing a role in a simulation. {LANGUAGE_PROTOCOL}
     **Your Persona**: {current_scenario['npc_prompt']}
     **User's Mission**: {mission_text}
-    
-    **Rules for Roleplay**:
-    1. NEVER break character. Stay in your NPC persona.
-    2. Start the conversation naturally based on your persona (e.g., asking what they want).
-    3. If the user completes the mission successfully, congratulate them in {ui_lang} and end the scenario.
-    
+    **Rules**: Never break character. End scenario gracefully if mission is completed.
     **Output Format**:
     [Chinese Characters]
     ([Pinyin])
@@ -161,29 +179,51 @@ else:
     header_text = f"🎬 {scenario_title}"
     welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
 
-# --- 4. 初始化模型 ---
 try:
     model = genai.GenerativeModel(model_name="gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
 except Exception as e:
     st.error(f"Error: {e}")
     st.stop()
 
-# --- 5. 聊天界面 ---
+# --- 4. 聊天界面渲染 ---
 st.header(header_text)
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# 渲染历史消息
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        # 如果历史消息带有音频，也渲染出来
+        if "audio_path" in message and message["audio_path"]:
+            st.audio(message["audio_path"], format="audio/mp3")
 
 if not st.session_state.messages:
     st.info(welcome_text)
 
+# --- 5. 双向输入区 (文字 + 麦克风) ---
+col1, col2 = st.columns([5, 1])
 chat_placeholder = "Type here..." if ui_lang == "English" else "Escribe aquí..."
+spoken_text = None
 
-if prompt := st.chat_input(chat_placeholder):
+with col1:
+    written_text = st.chat_input(chat_placeholder)
+
+with col2:
+    # 语音转文字录音按钮 (浏览器自带，完全免费)
+    spoken_text = speech_to_text(
+        language='zh-CN', # 默认优先识别中文
+        start_prompt="🎤" if ui_lang == "English" else "🎤",
+        stop_prompt="⏹️",
+        just_once=True,
+        key='STT'
+    )
+
+# 处理用户输入（文字或语音）
+prompt = written_text or spoken_text
+
+if prompt:
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
@@ -196,6 +236,21 @@ if prompt := st.chat_input(chat_placeholder):
             ])
             response = chat.send_message(prompt)
             message_placeholder.markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
+            
+            # 🚀 魔法发生的地方：将 AI 的文字转成声音
+            audio_file_path = None
+            with st.spinner("🎵 Generating voice..." if ui_lang == "English" else "🎵 Generando voz..."):
+                # 为了防止报错，提取第一行中文字符发音，或者全量发音
+                text_to_speak = response.text.split('\n')[0].replace('*', '') # 简单清洗
+                if text_to_speak.strip():
+                    audio_file_path = generate_tts_audio(text_to_speak, selected_voice_code)
+                    st.audio(audio_file_path, format="audio/mp3", autoplay=True) # Autoplay 自动播放
+
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": response.text,
+                "audio_path": audio_file_path
+            })
+            
         except Exception as e:
             st.error(f"Error: {e}")
