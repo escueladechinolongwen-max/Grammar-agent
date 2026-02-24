@@ -196,8 +196,8 @@ else:
     welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
 
 try:
-    # 🌟 核心修复 1：切换为极其稳定、高配额的 1.5-flash 模型
-    model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
+    # 🌟 回归正确模型：使用最新的官方合规引擎 2.0-flash
+    model = genai.GenerativeModel(model_name="gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
 except Exception as e:
     st.error(f"Error: {e}")
     st.stop()
@@ -243,7 +243,7 @@ if prompt:
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         try:
-            # 🌟 核心修复 2：将身份字典安全转换为 Google 支持的格式
+            # 🌟 核心修复 2：安全转换用户历史，彻底终结 429 内部死循环 Bug
             safe_history = []
             for m in st.session_state.messages[:-1]:
                 role_name = "model" if m["role"] == "assistant" else "user"
