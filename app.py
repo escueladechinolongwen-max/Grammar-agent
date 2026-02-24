@@ -5,7 +5,7 @@ import asyncio
 import edge_tts
 import tempfile
 import re
-import random  # 用于随机抽取钥匙
+import random  # 用于随机抽选钥匙
 from streamlit_mic_recorder import speech_to_text
 
 # --- 1. 页面与全局配置 ---
@@ -30,7 +30,7 @@ if not API_KEYS:
     st.error("⚠️ Error: No valid API Keys found.")
     st.stop()
 
-# 每次发送消息时，随机抽一把钥匙，完美分摊流量，绕过死锁！
+# 每次发送消息时，随机抽一把钥匙，完美分摊流量防封锁！
 selected_key = random.choice(API_KEYS)
 genai.configure(api_key=selected_key)
 
@@ -216,7 +216,8 @@ else:
     welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
 
 try:
-    model = genai.GenerativeModel(model_name="gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
+    # 🌟 关键切换：使用稳定性极高、欧洲区不卡脖子的 1.5-pro 旗舰模型
+    model = genai.GenerativeModel(model_name="gemini-1.5-pro", system_instruction=SYSTEM_PROMPT)
 except Exception as e:
     st.error(f"Error: {e}")
     st.stop()
