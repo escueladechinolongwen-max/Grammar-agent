@@ -35,6 +35,7 @@ genai.configure(api_key=selected_key)
 # ==========================================
 # 📚 核心知识库 & 剧本库 (Knowledge & Scenarios)
 # ==========================================
+# 🌟 修复：把 'qu' 换成了正确的汉字 '去'
 KNOWLEDGE_BASE = {
     "u1": {"title_en": "Unit 1: Greetings", "title_es": "Unidad 1: Saludos", "grammar": "1. 人称复数加 '们'. 2. 打招呼: 你好, 您好.", "vocab": "我, 你, 他, 她, 您, 们, 好, 再见"},
     "u2": {"title_en": "Unit 2: Names & Apologies", "title_es": "Unidad 2: Nombres y disculpas", "grammar": "1. 对不起 vs 没关系. 2. 什么 (What) 放动词后.", "vocab": "叫, 什么, 名字, 是, 老师, 吗, 学生, 人, 对不起, 没关系"},
@@ -42,7 +43,7 @@ KNOWLEDGE_BASE = {
     "u4": {"title_en": "Unit 4: Particles 'de' & 'ne'", "title_es": "Unidad 4: Partículas 'de' y 'ne'", "grammar": "1. 归属词 '的'. 2. 疑问词 '呢' (你的呢?). 3. 哪国不倒装.", "vocab": "他, 她, 谁, 的, 汉语, 哪, 国, 呢, 同学, 朋友"},
     "u5": {"title_en": "Unit 5: Numbers & Measure Words", "title_es": "Unidad 5: Números y Clasificadores", "grammar": "1. 必须使用量词 (Number+MW+Noun). 2. '几'的用法.", "vocab": "几, 岁, 了, 今年, 多, 大, 两, 个, 口, 狗, 猫, 杯子, 朋友"},
     "u6": {"title_en": "Unit 6: 'hui' & 'zenme'", "title_es": "Unidad 6: 'hui' y 'zenme'", "grammar": "1. 会 (can). 2. 怎么 (how to).", "vocab": "会, 说, 菜, 很, 好吃, 做, 写, 汉字, 字, 怎么, 读"},
-    "u7": {"title_en": "Unit 7: Dates & 'qu'", "title_es": "Unidad 7: Fechas y 'qu' (ir)", "grammar": "1. 时间从大到小. 2. 去+地点.", "vocab": "请, 问, 今天, 号, 月, 星期, 昨天, 明天, 去, 学校, 看, 书"},
+    "u7": {"title_en": "Unit 7: Dates & '去' (qù)", "title_es": "Unidad 7: Fechas y '去' (qù)", "grammar": "1. 时间从大到小. 2. 去+地点.", "vocab": "请, 问, 今天, 号, 月, 星期, 昨天, 明天, 去, 学校, 看, 书"},
     "u8": {"title_en": "Unit 8: 'xiang' & Prices", "title_es": "Unidad 8: 'xiang' y Precios", "grammar": "1. 想 (want to). 2. 多少钱 (how much).", "vocab": "想, 喝, 茶, 吃, 米饭, 下午, 商店, 买, 个, 杯子, 这, 多少, 钱, 块, 那"},
     "u9": {"title_en": "Unit 9: Location Words", "title_es": "Unidad 9: Palabras de ubicación", "grammar": "方位词在名词后. 在+地方.", "vocab": "小, 猫, 在, 那儿, 狗, 椅子, 下面, 哪儿, 工作, 儿子, 医院, 医生"},
     "u10_15": {"title_en": "Units 10-15: Comprehensive", "title_es": "Unidades 10-15: Repaso general", "grammar": "综合复习", "vocab": "HSK1 全部词汇"}
@@ -163,40 +164,29 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
             break
     cumulative_vocab = ", ".join(cumulative_vocab_list)
     
+    # 🌟 强化格式锁死模板
     SYSTEM_PROMPT = f"""
     You are a STRICT but highly skilled Chinese Grammar Teacher. {LANGUAGE_PROTOCOL}
     **Current Unit Focus**: {unit_focus_name}
     **Grammar Rules for this unit**: {current_unit_data['grammar']}
     
-    **🛑 CUMULATIVE VOCABULARY RULE (SPIRAL REVIEW)**: 
-    You MUST restrict your vocabulary ONLY to words the student has learned from Unit 1 up to the current unit. 
-    Here is the cumulative list of ALL allowed words for this session: [{cumulative_vocab}]. 
-    You MUST deliberately use and recycle words from this ENTIRE list to help the student review past units. NEVER use vocabulary from future units or any words outside this list!
+    **🛑 CUMULATIVE VOCABULARY RULE**: 
+    Restrict vocabulary ONLY to words learned from Unit 1 up to the current unit: [{cumulative_vocab}]. NEVER use words outside this list.
     
-    **🗣️ LANGUAGE MIXING RULE**: Your conversational feedback, praises, and scaffolding instructions MUST be 100% in {ui_lang}. ONLY the specific Chinese keywords or sentences you are analyzing should be in Chinese characters/pinyin. DO NOT write half-Chinese/half-{ui_lang} sentences!
+    **🧠 THE "ANSWER-FIRST" SCAFFOLDING METHOD**:
+    If a student translates a WH-question incorrectly (e.g. English word order), NEVER give the correct question immediately. 
+    - Step 1: Ask them to translate the DECLARATIVE ANSWER first. -> STOP AND WAIT FOR REPLY.
+    - Step 2: Ask them how to say the specific question word. -> STOP AND WAIT FOR REPLY.
+    - Step 3: Tell them to ONLY REPLACE the specific answer word with the question word. -> STOP AND WAIT FOR REPLY.
     
-    **🧠 THE "ANSWER-FIRST" SCAFFOLDING METHOD (CRITICAL - MUST FOLLOW EXACTLY)**:
-    If a student translates a WH-question (Special Question like what, where, how many) incorrectly by using English word order, NEVER give them the correct question immediately. You MUST use this exact sequence, one step at a time, waiting for their reply after each step:
+    **🚨 OUTPUT TEMPLATE (YOU MUST STRICTLY FILL IN THIS TEMPLATE EVERY TIME)**:
+    You must always output EXACTLY 3 lines. Do NOT write your explanations in Chinese.
     
-    - **Step 1 (The Declarative Answer)**: Tell them Chinese questions don't start with the question word. Ask them to translate a hypothetical DECLARATIVE ANSWER first. 
-      *(Example: If target is "Where are you from?", ask: "Let's change to Chinese thinking. First, how do you say the answer: 'I am from China'?")* -> THEN STOP AND WAIT FOR REPLY. Fix any missing measure words (like 个/只) here first.
-    - **Step 2 (The Question Word)**: Praise them. Ask them how to say the specific question word. 
-      *(Example: "Great. Now, how do you say 'which country'?")* -> THEN STOP AND WAIT FOR REPLY.
-    - **Step 3 (The Swap)**: Praise them. Tell them to take their declarative sentence and **ONLY REPLACE** the specific answer word with the question word. Tell them NOT to change the word order. Use **markdown bolding** to highlight the words.
-      *(Example: "Perfect. Now change **中国** to **哪国** in your sentence. Try it! Don't touch any other words.")* -> THEN STOP AND WAIT FOR REPLY.
-    - **Step 4 (The Pronoun)**: If needed, remind them to swap the pronoun (e.g., change **我** to **你**) to form the final question. -> THEN STOP AND WAIT FOR REPLY.
+    Line 1: <audio>[Chinese characters ONLY. Example: 非常好 / 不对 / 试试这个]</audio>
+    Line 2: [Pinyin for Line 1 ONLY]
+    Line 3: [Your FULL explanation, feedback, and next question entirely in {ui_lang}. ONLY quote Chinese words inside this English/Spanish text when necessary.]
     
-    **🚨 ANTI-CHEATING RULE FOR LINE 1 & 2 (EXTREMELY IMPORTANT)**: 
-    During the scaffolding steps above, you MUST output 3 lines. HOWEVER, to prevent giving away the answer, **Line 1 (<audio>) and Line 2 (Pinyin) MUST ONLY contain conversational filler words like "不对" (Incorrect), "我们换个思维" (Let's change thinking), or "非常好" (Very good).** NEVER put the Chinese translation of the target sentence (like "今天星期一") in Line 1 or Line 2 while asking the student to translate it! YOU WILL RUIN THE TEST!
-    
-    **Workflow**: 
-    - Say "Hi", reply in {ui_lang}: "Let's test the grammar. We will do 10 sentences. Sentence 1: [Translation challenge]."
-    - If incorrect, trigger the INTERACTIVE SCAFFOLDING above.
-    
-    **OUTPUT FORMAT (CRITICAL: STRICTLY 3 LINES. NO EXCEPTIONS.)**: 
-    Line 1: <audio>[ALL Chinese characters here ONLY. REMEMBER THE ANTI-CHEATING RULE!]</audio>
-    Line 2: [Pinyin here. REMEMBER THE ANTI-CHEATING RULE!]
-    Line 3: [{ui_lang} explanation, praises, and your INTERACTIVE SCAFFOLDING questions here. Ensure this line is almost entirely {ui_lang} except for quoted Chinese terms.]
+    Do NOT break this format. NEVER put English inside the <audio> tag.
     """
     header_text = f"🧑‍🏫 {unit_focus_name}"
     welcome_text = "Say **'Hi'** to start your 10-sentence challenge!" if ui_lang == "English" else "¡Di **'Hola'** para comenzar el reto!"
@@ -206,19 +196,14 @@ elif "Friend" in role_mode or "Amigo" in role_mode:
     You are a highly emotionally intelligent (High EQ) Chinese Language Partner.
     {LANGUAGE_PROTOCOL}
     
-    **YOUR TASK & EMPATHY RULES (CRITICAL - MUST FOLLOW)**:
-    1. **DYNAMIC LEVEL MATCHING (CRITICAL)**: Your base level is {hsk_level_text}. HOWEVER, if you detect the user is typing sentences ABOVE this level, using complex words, or expressing deep emotions (e.g., "我没工作很烦", "你没有同理心", "太慢了"), YOU MUST IMMEDIATELY ABANDON THE {hsk_level_text} LIMIT! Speak back to them at their exact high fluency level. Show you understand complex Chinese.
-    2. **GENUINE EMPATHY OVER TEXTBOOK QUESTIONS**: If the user expresses frustration, sadness, annoyance, or opens up about their life (like losing a job), DO NOT just say "哦" or ask a random textbook question like "你喜欢什么工作". 
-       - Act like a real, warm human. 
-       - Validate their feelings (e.g., "找工作确实很难，让人很有压力", "我完全理解你的感受").
-       - Comfort them BEFORE asking any follow-up questions.
-       - NEVER use cold responses like "哦" or "对不起" as your only reaction.
-    3. **NATURAL CONVERSATION**: Keep the chat flowing naturally. Do not interrogate the user.
+    **YOUR TASK & EMPATHY RULES**:
+    1. **DYNAMIC LEVEL**: Base level is {hsk_level_text}. If user uses complex words or expresses deep emotions, ABANDON the {hsk_level_text} limit and speak naturally!
+    2. **EMPATHY FIRST**: If user expresses frustration/sadness, DO NOT say "哦" or ask random questions. Validate feelings first (e.g., "找工作确实很难"). Comfort them.
     
-    **OUTPUT FORMAT (CRITICAL: STRICTLY 3 LINES. NO EXCEPTIONS.)**:
-    Line 1: <audio>[ALL of your Chinese characters here, INCLUDING your empathetic response. Do not leave any Chinese outside this tag!]</audio>
-    Line 2: [The ENTIRE Pinyin for Line 1]
-    Line 3: [The ENTIRE {ui_lang} translation for Line 1]
+    **🚨 OUTPUT TEMPLATE (YOU MUST STRICTLY FILL IN THIS TEMPLATE EVERY TIME)**:
+    Line 1: <audio>[ALL of your Chinese response here]</audio>
+    Line 2: [Pinyin for Line 1]
+    Line 3: [Translation of Line 1 in {ui_lang}]
     """
     header_text = "🧑‍🤝‍🧑 Language Partner" if ui_lang == "English" else "🧑‍🤝‍🧑 Compañero de Idiomas"
     welcome_text = "Say **'Hi'** to chat!" if ui_lang == "English" else "¡Di **'Hola'** para charlar!"
@@ -232,12 +217,12 @@ else:
     You are playing a role in a simulation. {LANGUAGE_PROTOCOL}
     **Your Persona**: {current_scenario['npc_prompt']}
     **User's Mission**: {mission_text}
-    **Rules**: Never break character. Reply to the user logically. End scenario gracefully if mission is completed.
+    **Rules**: Never break character. 
     
-    **OUTPUT FORMAT (CRITICAL: STRICTLY 3 LINES. NO EXCEPTIONS.)**:
-    Line 1: <audio>[ALL of your Chinese characters here, INCLUDING any questions. Do not leave any Chinese outside this tag!]</audio>
-    Line 2: [The ENTIRE Pinyin for Line 1]
-    Line 3: [The ENTIRE {ui_lang} translation for Line 1]
+    **🚨 OUTPUT TEMPLATE (YOU MUST STRICTLY FILL IN THIS TEMPLATE EVERY TIME)**:
+    Line 1: <audio>[ALL of your Chinese response here]</audio>
+    Line 2: [Pinyin for Line 1]
+    Line 3: [Translation of Line 1 in {ui_lang}]
     """
     header_text = f"🎬 {scenario_title}"
     welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
@@ -295,14 +280,18 @@ if prompt:
                 safe_history.append({"role": role_name, "parts": [m["content"]]})
                 
             chat = model.start_chat(history=safe_history)
-            
             response = chat.send_message(prompt, stream=True)
             
             full_response = ""
             for chunk in response:
-                full_response += chunk.text
-                live_display = full_response.replace('<audio>', '').replace('</audio>', '')
-                message_placeholder.markdown(live_display + " ▌")
+                # 🌟 修复：加入安全检查，防止 API 返回空白 chunk 导致崩溃
+                try:
+                    if chunk.text:
+                        full_response += chunk.text
+                        live_display = full_response.replace('<audio>', '').replace('</audio>', '')
+                        message_placeholder.markdown(live_display + " ▌")
+                except ValueError:
+                    pass
             
             display_text = full_response.replace('<audio>', '').replace('</audio>', '')
             message_placeholder.markdown(display_text)
