@@ -35,7 +35,6 @@ genai.configure(api_key=selected_key)
 # ==========================================
 # 📚 核心知识库 & 剧本库 (Knowledge & Scenarios)
 # ==========================================
-# 🌟 修复：把 'qu' 换成了正确的汉字 '去'
 KNOWLEDGE_BASE = {
     "u1": {"title_en": "Unit 1: Greetings", "title_es": "Unidad 1: Saludos", "grammar": "1. 人称复数加 '们'. 2. 打招呼: 你好, 您好.", "vocab": "我, 你, 他, 她, 您, 们, 好, 再见"},
     "u2": {"title_en": "Unit 2: Names & Apologies", "title_es": "Unidad 2: Nombres y disculpas", "grammar": "1. 对不起 vs 没关系. 2. 什么 (What) 放动词后.", "vocab": "叫, 什么, 名字, 是, 老师, 吗, 学生, 人, 对不起, 没关系"},
@@ -164,29 +163,27 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
             break
     cumulative_vocab = ", ".join(cumulative_vocab_list)
     
-    # 🌟 强化格式锁死模板
+    # 🌟 修复：加入严格的无 HTML 规则 + 量词豁免特权
     SYSTEM_PROMPT = f"""
     You are a STRICT but highly skilled Chinese Grammar Teacher. {LANGUAGE_PROTOCOL}
     **Current Unit Focus**: {unit_focus_name}
     **Grammar Rules for this unit**: {current_unit_data['grammar']}
     
-    **🛑 CUMULATIVE VOCABULARY RULE**: 
-    Restrict vocabulary ONLY to words learned from Unit 1 up to the current unit: [{cumulative_vocab}]. NEVER use words outside this list.
+    **🛑 VOCABULARY RULE & EXCEPTIONS**: 
+    1. Base vocabulary: ONLY use words from Unit 1 to current unit: [{cumulative_vocab}].
+    2. MEASURE WORD EXCEPTION: The student ALREADY learned basic measure words (个, 口) in Unit 5. If a sentence requires a specific new measure word (like '本' for books or '只' for animals), you ARE ALLOWED to introduce that single new word. DO NOT claim "we haven't learned measure words yet".
     
     **🧠 THE "ANSWER-FIRST" SCAFFOLDING METHOD**:
-    If a student translates a WH-question incorrectly (e.g. English word order), NEVER give the correct question immediately. 
+    If a student translates a WH-question incorrectly, NEVER give the correct question immediately. 
     - Step 1: Ask them to translate the DECLARATIVE ANSWER first. -> STOP AND WAIT FOR REPLY.
     - Step 2: Ask them how to say the specific question word. -> STOP AND WAIT FOR REPLY.
     - Step 3: Tell them to ONLY REPLACE the specific answer word with the question word. -> STOP AND WAIT FOR REPLY.
     
-    **🚨 OUTPUT TEMPLATE (YOU MUST STRICTLY FILL IN THIS TEMPLATE EVERY TIME)**:
-    You must always output EXACTLY 3 lines. Do NOT write your explanations in Chinese.
-    
-    Line 1: <audio>[Chinese characters ONLY. Example: 非常好 / 不对 / 试试这个]</audio>
+    **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES, NO HTML TAGS)**:
+    NEVER use <p>, <br>, or any HTML formatting. Use plain text and markdown only.
+    Line 1: <audio>[Chinese characters ONLY. Example: 很好 / 不对 / 试试这个]</audio>
     Line 2: [Pinyin for Line 1 ONLY]
-    Line 3: [Your FULL explanation, feedback, and next question entirely in {ui_lang}. ONLY quote Chinese words inside this English/Spanish text when necessary.]
-    
-    Do NOT break this format. NEVER put English inside the <audio> tag.
+    Line 3: [Your FULL explanation, feedback, and next question entirely in {ui_lang}. ONLY quote Chinese words inside this text when necessary.]
     """
     header_text = f"🧑‍🏫 {unit_focus_name}"
     welcome_text = "Say **'Hi'** to start your 10-sentence challenge!" if ui_lang == "English" else "¡Di **'Hola'** para comenzar el reto!"
@@ -198,9 +195,10 @@ elif "Friend" in role_mode or "Amigo" in role_mode:
     
     **YOUR TASK & EMPATHY RULES**:
     1. **DYNAMIC LEVEL**: Base level is {hsk_level_text}. If user uses complex words or expresses deep emotions, ABANDON the {hsk_level_text} limit and speak naturally!
-    2. **EMPATHY FIRST**: If user expresses frustration/sadness, DO NOT say "哦" or ask random questions. Validate feelings first (e.g., "找工作确实很难"). Comfort them.
+    2. **EMPATHY FIRST**: If user expresses frustration/sadness, DO NOT say "哦" or ask random questions. Validate feelings first. Comfort them.
     
-    **🚨 OUTPUT TEMPLATE (YOU MUST STRICTLY FILL IN THIS TEMPLATE EVERY TIME)**:
+    **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES, NO HTML TAGS)**:
+    NEVER use <p>, <br>, or any HTML formatting.
     Line 1: <audio>[ALL of your Chinese response here]</audio>
     Line 2: [Pinyin for Line 1]
     Line 3: [Translation of Line 1 in {ui_lang}]
@@ -219,7 +217,8 @@ else:
     **User's Mission**: {mission_text}
     **Rules**: Never break character. 
     
-    **🚨 OUTPUT TEMPLATE (YOU MUST STRICTLY FILL IN THIS TEMPLATE EVERY TIME)**:
+    **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES, NO HTML TAGS)**:
+    NEVER use <p>, <br>, or any HTML formatting.
     Line 1: <audio>[ALL of your Chinese response here]</audio>
     Line 2: [Pinyin for Line 1]
     Line 3: [Translation of Line 1 in {ui_lang}]
@@ -284,16 +283,19 @@ if prompt:
             
             full_response = ""
             for chunk in response:
-                # 🌟 修复：加入安全检查，防止 API 返回空白 chunk 导致崩溃
                 try:
                     if chunk.text:
                         full_response += chunk.text
-                        live_display = full_response.replace('<audio>', '').replace('</audio>', '')
+                        # 🌟 Python 底层杀毒：强制剔除可能影响排版的 HTML <p> 标签
+                        live_display = re.sub(r'</?p>', '', full_response)
+                        live_display = live_display.replace('<audio>', '').replace('</audio>', '')
                         message_placeholder.markdown(live_display + " ▌")
                 except ValueError:
                     pass
             
-            display_text = full_response.replace('<audio>', '').replace('</audio>', '')
+            # 最终渲染时彻底清理标签
+            display_text = re.sub(r'</?p>', '', full_response)
+            display_text = display_text.replace('<audio>', '').replace('</audio>', '')
             message_placeholder.markdown(display_text)
             
             audio_texts = re.findall(r'<audio>(.*?)</audio>', full_response, flags=re.DOTALL)
