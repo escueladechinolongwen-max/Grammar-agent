@@ -23,14 +23,12 @@ if not raw_keys:
     st.error("⚠️ Error: API Key not found. Please set GOOGLE_API_KEY in Render.")
     st.stop()
 
-# 自动把 Render 里用逗号隔开的多把钥匙拆分出来
 API_KEYS = [k.strip() for k in raw_keys.split(",") if k.strip()]
 
 if not API_KEYS:
     st.error("⚠️ Error: No valid API Keys found.")
     st.stop()
 
-# 每次发送消息时，随机抽一把钥匙，完美分摊流量防封锁！
 selected_key = random.choice(API_KEYS)
 genai.configure(api_key=selected_key)
 
@@ -188,15 +186,16 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
       *(Example: "Perfect. Now change **中国** to **哪国** in your sentence. Try it! Don't touch any other words.")* -> THEN STOP AND WAIT FOR REPLY.
     - **Step 4 (The Pronoun)**: If needed, remind them to swap the pronoun (e.g., change **我** to **你**) to form the final question. -> THEN STOP AND WAIT FOR REPLY.
     
-    *Be extremely patient. If they change the word order or mess up the swap, gently remind them: "Only change the keyword, don't touch the other words."*
+    **🚨 ANTI-CHEATING RULE FOR LINE 1 & 2 (EXTREMELY IMPORTANT)**: 
+    During the scaffolding steps above, you MUST output 3 lines. HOWEVER, to prevent giving away the answer, **Line 1 (<audio>) and Line 2 (Pinyin) MUST ONLY contain conversational filler words like "不对" (Incorrect), "我们换个思维" (Let's change thinking), or "非常好" (Very good).** NEVER put the Chinese translation of the target sentence (like "今天星期一") in Line 1 or Line 2 while asking the student to translate it! YOU WILL RUIN THE TEST!
     
     **Workflow**: 
     - Say "Hi", reply in {ui_lang}: "Let's test the grammar. We will do 10 sentences. Sentence 1: [Translation challenge]."
     - If incorrect, trigger the INTERACTIVE SCAFFOLDING above.
     
     **OUTPUT FORMAT (CRITICAL: STRICTLY 3 LINES. NO EXCEPTIONS.)**: 
-    Line 1: <audio>[ALL Chinese characters here ONLY]</audio>
-    Line 2: [Pinyin here]
+    Line 1: <audio>[ALL Chinese characters here ONLY. REMEMBER THE ANTI-CHEATING RULE!]</audio>
+    Line 2: [Pinyin here. REMEMBER THE ANTI-CHEATING RULE!]
     Line 3: [{ui_lang} explanation, praises, and your INTERACTIVE SCAFFOLDING questions here. Ensure this line is almost entirely {ui_lang} except for quoted Chinese terms.]
     """
     header_text = f"🧑‍🏫 {unit_focus_name}"
@@ -297,21 +296,17 @@ if prompt:
                 
             chat = model.start_chat(history=safe_history)
             
-            # 🌟 核心改进：开启流式打字机输出 (stream=True)
             response = chat.send_message(prompt, stream=True)
             
             full_response = ""
             for chunk in response:
                 full_response += chunk.text
-                # 实时更新画面，产生打字机效果。同时隐藏难看的 <audio> 标签。
                 live_display = full_response.replace('<audio>', '').replace('</audio>', '')
                 message_placeholder.markdown(live_display + " ▌")
             
-            # 最终去掉光标
             display_text = full_response.replace('<audio>', '').replace('</audio>', '')
             message_placeholder.markdown(display_text)
             
-            # 提取音频标签内的纯中文去生成语音
             audio_texts = re.findall(r'<audio>(.*?)</audio>', full_response, flags=re.DOTALL)
             
             audio_file_path = None
