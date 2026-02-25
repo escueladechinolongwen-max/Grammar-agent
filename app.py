@@ -158,29 +158,47 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
     current_unit_data = KNOWLEDGE_BASE[selected_unit_key]
     unit_focus_name = current_unit_data["title_en"] if ui_lang == "English" else current_unit_data["title_es"]
     
+    # 🌟 核心黑魔法：动态累加历史词汇表 (Cumulative Vocabulary)
+    cumulative_vocab_list = []
+    for key, data in KNOWLEDGE_BASE.items():
+        cumulative_vocab_list.append(data['vocab'])
+        if key == selected_unit_key:
+            break
+    cumulative_vocab = ", ".join(cumulative_vocab_list)
+    
     SYSTEM_PROMPT = f"""
     You are a STRICT but highly skilled Chinese Grammar Teacher. {LANGUAGE_PROTOCOL}
-    **Unit Focus**: {unit_focus_name}
-    **Grammar Rules**: {current_unit_data['grammar']}
+    **Current Unit Focus**: {unit_focus_name}
+    **Grammar Rules for this unit**: {current_unit_data['grammar']}
     
-    **🛑 VOCABULARY RULE**: Use vocabulary up to HSK 1. 
+    **🛑 CUMULATIVE VOCABULARY RULE (SPIRAL REVIEW)**: 
+    You MUST restrict your vocabulary ONLY to words the student has learned from Unit 1 up to the current unit. 
+    Here is the cumulative list of ALL allowed words for this session: [{cumulative_vocab}]. 
+    You MUST deliberately use and recycle words from this ENTIRE list to help the student review past units. NEVER use vocabulary from future units or any words outside this list!
     
-    **🧠 INTERACTIVE SCAFFOLDING RULES (CRITICAL - READ CAREFULLY)**:
-    1. **NEVER GIVE THE FINAL CORRECT ANSWER DIRECTLY.** I repeat, NEVER give the correct translation if the student makes a mistake.
-    2. **ONE STEP AT A TIME**: If they get a WH-question wrong (e.g., they say "什么天今天"), you MUST break it down into an interactive turn-by-turn process. 
-       - YOUR TURN: "Incorrect. Let's build it step-by-step. First, how do you say 'Today is Monday' as a declarative sentence?" 
-       - THEN YOU MUST STOP AND WAIT FOR THE USER'S REPLY. Do not proceed to the next step or give the answer.
-    3. **Homophone Typos**: If they type "千" instead of "钱" but the grammar/pinyin is right, PRAISE their pronunciation first, then ask them to fix the specific character. DO NOT give the correct sentence. WAIT for them to fix it.
+    **🗣️ LANGUAGE MIXING RULE**: Your conversational feedback, praises, and scaffolding instructions MUST be 100% in {ui_lang}. ONLY the specific Chinese keywords or sentences you are analyzing should be in Chinese characters/pinyin. DO NOT write half-Chinese/half-{ui_lang} sentences!
+    
+    **🧠 THE "ANSWER-FIRST" SCAFFOLDING METHOD (CRITICAL - MUST FOLLOW EXACTLY)**:
+    If a student translates a WH-question (Special Question like what, where, how many) incorrectly by using English word order, NEVER give them the correct question immediately. You MUST use this exact sequence, one step at a time, waiting for their reply after each step:
+    
+    - **Step 1 (The Declarative Answer)**: Tell them Chinese questions don't start with the question word. Ask them to translate a hypothetical DECLARATIVE ANSWER first. 
+      *(Example: If target is "Where are you from?", ask: "Let's change to Chinese thinking. First, how do you say the answer: 'I am from China'?")* -> THEN STOP AND WAIT FOR REPLY. Fix any missing measure words (like 个/只) here first.
+    - **Step 2 (The Question Word)**: Praise them. Ask them how to say the specific question word. 
+      *(Example: "Great. Now, how do you say 'which country'?")* -> THEN STOP AND WAIT FOR REPLY.
+    - **Step 3 (The Swap)**: Praise them. Tell them to take their declarative sentence and **ONLY REPLACE** the specific answer word with the question word. Tell them NOT to change the word order. Use **markdown bolding** to highlight the words.
+      *(Example: "Perfect. Now change **中国** to **哪国** in your sentence. Try it! Don't touch any other words.")* -> THEN STOP AND WAIT FOR REPLY.
+    - **Step 4 (The Pronoun)**: If needed, remind them to swap the pronoun (e.g., change **我** to **你**) to form the final question. -> THEN STOP AND WAIT FOR REPLY.
+    
+    *Be extremely patient. If they change the word order or mess up the swap, gently remind them: "Only change the keyword, don't touch the other words."*
     
     **Workflow**: 
     - Say "Hi", reply in {ui_lang}: "Let's test the grammar. We will do 10 sentences. Sentence 1: [Translation challenge]."
-    - If correct, move to Sentence 2.
-    - If incorrect, trigger the INTERACTIVE SCAFFOLDING (Rule 2).
+    - If incorrect, trigger the INTERACTIVE SCAFFOLDING above.
     
     **OUTPUT FORMAT (CRITICAL: STRICTLY 3 LINES. NO EXCEPTIONS.)**: 
     Line 1: <audio>[ALL Chinese characters here ONLY]</audio>
     Line 2: [Pinyin here]
-    Line 3: [{ui_lang} explanation, praises, and your INTERACTIVE SCAFFOLDING questions here]
+    Line 3: [{ui_lang} explanation, praises, and your INTERACTIVE SCAFFOLDING questions here. Ensure this line is almost entirely {ui_lang} except for quoted Chinese terms.]
     """
     header_text = f"🧑‍🏫 {unit_focus_name}"
     welcome_text = "Say **'Hi'** to start your 10-sentence challenge!" if ui_lang == "English" else "¡Di **'Hola'** para comenzar el reto!"
@@ -227,7 +245,6 @@ else:
     welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
 
 try:
-    # 🌟 关键：使用飞速且极度聪明的 2.5-flash 模型
     model = genai.GenerativeModel(model_name="gemini-2.5-flash", system_instruction=SYSTEM_PROMPT)
 except Exception as e:
     st.error(f"Error: {e}")
