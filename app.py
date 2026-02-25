@@ -158,7 +158,6 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
     current_unit_data = KNOWLEDGE_BASE[selected_unit_key]
     unit_focus_name = current_unit_data["title_en"] if ui_lang == "English" else current_unit_data["title_es"]
     
-    # 🌟 核心黑魔法：动态累加历史词汇表 (Cumulative Vocabulary)
     cumulative_vocab_list = []
     for key, data in KNOWLEDGE_BASE.items():
         cumulative_vocab_list.append(data['vocab'])
@@ -297,13 +296,23 @@ if prompt:
                 safe_history.append({"role": role_name, "parts": [m["content"]]})
                 
             chat = model.start_chat(history=safe_history)
-            response = chat.send_message(prompt)
             
-            # 提取音频标签内的纯中文
-            audio_texts = re.findall(r'<audio>(.*?)</audio>', response.text, flags=re.DOTALL)
-            display_text = response.text.replace('<audio>', '').replace('</audio>', '')
+            # 🌟 核心改进：开启流式打字机输出 (stream=True)
+            response = chat.send_message(prompt, stream=True)
             
+            full_response = ""
+            for chunk in response:
+                full_response += chunk.text
+                # 实时更新画面，产生打字机效果。同时隐藏难看的 <audio> 标签。
+                live_display = full_response.replace('<audio>', '').replace('</audio>', '')
+                message_placeholder.markdown(live_display + " ▌")
+            
+            # 最终去掉光标
+            display_text = full_response.replace('<audio>', '').replace('</audio>', '')
             message_placeholder.markdown(display_text)
+            
+            # 提取音频标签内的纯中文去生成语音
+            audio_texts = re.findall(r'<audio>(.*?)</audio>', full_response, flags=re.DOTALL)
             
             audio_file_path = None
             if audio_texts:
