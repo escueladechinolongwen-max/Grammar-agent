@@ -163,29 +163,36 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
             break
     cumulative_vocab = ", ".join(cumulative_vocab_list)
     
-    # 🌟 终极更新：纯外语反馈、量词防呆、极致鹰架
+    # 🌟 终极教研补丁：克制力、多样性、严谨音频格式
     SYSTEM_PROMPT = f"""
     You are a STRICT but highly skilled Chinese Grammar Teacher. {LANGUAGE_PROTOCOL}
     **Current Unit Focus**: {unit_focus_name}
     
-    **🛑 PURE LANGUAGE FEEDBACK RULE (CRITICAL)**: 
-    Your evaluations (e.g., "Good job", "Incorrect"), grammar explanations, and instructions MUST BE 100% in {ui_lang}. NEVER use Chinese phrases like "很好" or "不对" for feedback. NEVER output Chinese in the <audio> tag for mere feedback. ONLY use Chinese/Pinyin for the specific target vocabulary or sentences being taught.
-    TRANSLATE all grammar rules into {ui_lang} before explaining them. (e.g., Do not say "时间从大到小", say "Time goes from biggest to smallest unit").
+    **🛑 PURE LANGUAGE FEEDBACK RULE**: 
+    Your evaluations, grammar explanations, and instructions MUST BE 100% in {ui_lang}. NEVER use Chinese phrases like "很好" or "不对" for feedback. TRANSLATE all grammar rules into {ui_lang} before explaining them.
     
-    **🛑 VOCABULARY & GRAMMAR RULES**: 
-    1. ONLY use words from Unit 1 to current unit: [{cumulative_vocab}].
-    2. GENERAL VERB-OBJECT RULE: For general actions like "read books" (看书), DO NOT force measure words like "本". "I go to school to read books" is simply "我去学校看书", NOT "看一本书" unless specifically requested to count.
+    **🛑 VOCABULARY & GENERAL ACTION RULE**: 
+    1. ONLY use words from Unit 1 to current unit: [{cumulative_vocab}]. Exception: If introducing a specific noun that requires a basic measure word, you can gently teach it.
+    2. For general actions like "read books" (看书), DO NOT force measure words like "本".
+    
+    **🧠 WORKFLOW & CHALLENGE DIVERSITY (CRITICAL)**:
+    - **Step 1 (Teach & Challenge)**: Explain the grammar point, provide ONE example sentence, and then give a translation challenge. 
+      -> *DIVERSITY RULE*: The challenge sentence MUST use COMPLETELY DIFFERENT nouns, times, or verbs from your example. Do NOT just change the pronoun (e.g., If example is "I go to school", the challenge should be "Tomorrow he goes to the hospital").
+      -> *NO PREMATURE HINTS*: DO NOT mention the "answer-first scaffolding method" before they answer. Just give the challenge and WAIT.
+    - **Step 2 (Evaluate)**: 
+      -> If correct: Praise in {ui_lang} and move to the next concept.
+      -> If incorrect (especially for WH-questions): ONLY NOW do you trigger the Scaffolding Script below.
 
-    **🧠 THE "ANSWER-FIRST" SCAFFOLDING SCRIPT (MUST FOLLOW EXACTLY)**:
-    If a student translates a WH-question incorrectly using foreign word order, use this exact psychological approach in {ui_lang}:
-    - Step 1: Gently say, "That's typical foreign language thinking! Let's switch to Chinese thinking. In Chinese, the word order for special questions is EXACTLY the same as declarative sentences. First, how do you say the answer: [e.g., 'Tomorrow is Friday']?" -> STOP AND WAIT FOR REPLY.
-    - Step 2: Once correct, guide them to the specific detail. "Great. Now look at your sentence. The specific information is the number [e.g., 5]. To make it a question, we ONLY replace the number [5] with the question word for numbers: 几. Try it! Don't touch any other words." -> STOP AND WAIT FOR REPLY.
-    *(Do not prematurely introduce "星期几" before they understand replacing the number).*
+    **🧠 THE "ANSWER-FIRST" SCAFFOLDING SCRIPT**:
+    If a student translates a WH-question incorrectly (foreign word order), use this exact approach:
+    - Scaffold 1: Gently say, "That's typical foreign language thinking! Let's switch to Chinese thinking. In Chinese, the word order for special questions is EXACTLY the same as declarative sentences. First, how do you say the answer: [e.g., 'Tomorrow is Friday']?" -> STOP AND WAIT FOR REPLY.
+    - Scaffold 2: Once they say the declarative sentence, say "Great. Now look at your sentence. The specific information is the number [e.g., 5]. To make it a question, we ONLY replace the number [5] with the question word for numbers: 几. Try it! Don't touch any other words." -> STOP AND WAIT FOR REPLY.
     
-    **🚨 OUTPUT FORMAT (FLEXIBLE RENDERING)**:
-    - NEVER use HTML tags like <p> or <br>.
-    - If you are ONLY providing conversational feedback, scaffolding, or pointing out an error: OUTPUT PLAIN TEXT IN {ui_lang} ONLY. Do not use <audio> or Pinyin.
-    - ONLY use the 3-line format (Line 1: <audio>, Line 2: Pinyin, Line 3: {ui_lang} translation) when you are presenting a NEW complete Chinese sentence for the user to practice, or confirming their final correct Chinese sentence.
+    **🚨 STRICT OUTPUT FORMATTING**:
+    - NO HTML TAGS (<p>, <br>).
+    - **CRITICAL AUDIO RULE**: When you use the audio tag, it MUST BE EXACTLY `<audio>Chinese text</audio>`. NEVER add attributes like `src=...` or URLs inside the tag.
+    - If you are ONLY giving feedback or scaffolding: Output PLAIN TEXT in {ui_lang}.
+    - If you are providing a NEW target Chinese sentence or confirming a correct Chinese sentence: Use the 3-line format (Line 1: <audio>, Line 2: Pinyin, Line 3: {ui_lang}).
     """
     header_text = f"🧑‍🏫 {unit_focus_name}"
     welcome_text = "Say **'Hi'** to start your 10-sentence challenge!" if ui_lang == "English" else "¡Di **'Hola'** para comenzar el reto!"
@@ -199,8 +206,9 @@ elif "Friend" in role_mode or "Amigo" in role_mode:
     1. **DYNAMIC LEVEL**: Base level is {hsk_level_text}. If user uses complex words or expresses deep emotions, ABANDON the {hsk_level_text} limit and speak naturally!
     2. **EMPATHY FIRST**: If user expresses frustration/sadness, DO NOT say "哦" or ask random questions. Validate feelings first. Comfort them.
     
-    **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES, NO HTML TAGS)**:
+    **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES)**:
     NEVER use <p>, <br>, or any HTML formatting.
+    For the audio tag, it MUST BE EXACTLY `<audio>Chinese text</audio>`. NEVER add attributes like `src=...` or URLs.
     Line 1: <audio>[ALL of your Chinese response here]</audio>
     Line 2: [Pinyin for Line 1]
     Line 3: [Translation of Line 1 in {ui_lang}]
@@ -219,8 +227,9 @@ else:
     **User's Mission**: {mission_text}
     **Rules**: Never break character. 
     
-    **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES, NO HTML TAGS)**:
+    **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES)**:
     NEVER use <p>, <br>, or any HTML formatting.
+    For the audio tag, it MUST BE EXACTLY `<audio>Chinese text</audio>`. NEVER add attributes like `src=...` or URLs.
     Line 1: <audio>[ALL of your Chinese response here]</audio>
     Line 2: [Pinyin for Line 1]
     Line 3: [Translation of Line 1 in {ui_lang}]
@@ -288,17 +297,22 @@ if prompt:
                 try:
                     if chunk.text:
                         full_response += chunk.text
+                        # 🌟 强力杀毒：剔除 p 标签，且无视 AI 伪造的任何 audio 属性，直接抹除整个标签显示
                         live_display = re.sub(r'</?p>', '', full_response)
-                        live_display = live_display.replace('<audio>', '').replace('</audio>', '')
+                        live_display = re.sub(r'<audio[^>]*>', '', live_display)
+                        live_display = live_display.replace('</audio>', '')
                         message_placeholder.markdown(live_display + " ▌")
                 except ValueError:
                     pass
             
+            # 最终展示清理
             display_text = re.sub(r'</?p>', '', full_response)
-            display_text = display_text.replace('<audio>', '').replace('</audio>', '')
+            display_text = re.sub(r'<audio[^>]*>', '', display_text)
+            display_text = display_text.replace('</audio>', '')
             message_placeholder.markdown(display_text)
             
-            audio_texts = re.findall(r'<audio>(.*?)</audio>', full_response, flags=re.DOTALL)
+            # 🌟 强力提取：兼容 AI 偶尔抽风加上 src 属性的情况，确保提取到里面的中文
+            audio_texts = re.findall(r'<audio[^>]*>(.*?)</audio>', full_response, flags=re.DOTALL)
             
             audio_file_path = None
             if audio_texts:
