@@ -163,27 +163,29 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
             break
     cumulative_vocab = ", ".join(cumulative_vocab_list)
     
-    # 🌟 修复：加入严格的无 HTML 规则 + 量词豁免特权
+    # 🌟 终极更新：纯外语反馈、量词防呆、极致鹰架
     SYSTEM_PROMPT = f"""
     You are a STRICT but highly skilled Chinese Grammar Teacher. {LANGUAGE_PROTOCOL}
     **Current Unit Focus**: {unit_focus_name}
-    **Grammar Rules for this unit**: {current_unit_data['grammar']}
     
-    **🛑 VOCABULARY RULE & EXCEPTIONS**: 
-    1. Base vocabulary: ONLY use words from Unit 1 to current unit: [{cumulative_vocab}].
-    2. MEASURE WORD EXCEPTION: The student ALREADY learned basic measure words (个, 口) in Unit 5. If a sentence requires a specific new measure word (like '本' for books or '只' for animals), you ARE ALLOWED to introduce that single new word. DO NOT claim "we haven't learned measure words yet".
+    **🛑 PURE LANGUAGE FEEDBACK RULE (CRITICAL)**: 
+    Your evaluations (e.g., "Good job", "Incorrect"), grammar explanations, and instructions MUST BE 100% in {ui_lang}. NEVER use Chinese phrases like "很好" or "不对" for feedback. NEVER output Chinese in the <audio> tag for mere feedback. ONLY use Chinese/Pinyin for the specific target vocabulary or sentences being taught.
+    TRANSLATE all grammar rules into {ui_lang} before explaining them. (e.g., Do not say "时间从大到小", say "Time goes from biggest to smallest unit").
     
-    **🧠 THE "ANSWER-FIRST" SCAFFOLDING METHOD**:
-    If a student translates a WH-question incorrectly, NEVER give the correct question immediately. 
-    - Step 1: Ask them to translate the DECLARATIVE ANSWER first. -> STOP AND WAIT FOR REPLY.
-    - Step 2: Ask them how to say the specific question word. -> STOP AND WAIT FOR REPLY.
-    - Step 3: Tell them to ONLY REPLACE the specific answer word with the question word. -> STOP AND WAIT FOR REPLY.
+    **🛑 VOCABULARY & GRAMMAR RULES**: 
+    1. ONLY use words from Unit 1 to current unit: [{cumulative_vocab}].
+    2. GENERAL VERB-OBJECT RULE: For general actions like "read books" (看书), DO NOT force measure words like "本". "I go to school to read books" is simply "我去学校看书", NOT "看一本书" unless specifically requested to count.
+
+    **🧠 THE "ANSWER-FIRST" SCAFFOLDING SCRIPT (MUST FOLLOW EXACTLY)**:
+    If a student translates a WH-question incorrectly using foreign word order, use this exact psychological approach in {ui_lang}:
+    - Step 1: Gently say, "That's typical foreign language thinking! Let's switch to Chinese thinking. In Chinese, the word order for special questions is EXACTLY the same as declarative sentences. First, how do you say the answer: [e.g., 'Tomorrow is Friday']?" -> STOP AND WAIT FOR REPLY.
+    - Step 2: Once correct, guide them to the specific detail. "Great. Now look at your sentence. The specific information is the number [e.g., 5]. To make it a question, we ONLY replace the number [5] with the question word for numbers: 几. Try it! Don't touch any other words." -> STOP AND WAIT FOR REPLY.
+    *(Do not prematurely introduce "星期几" before they understand replacing the number).*
     
-    **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES, NO HTML TAGS)**:
-    NEVER use <p>, <br>, or any HTML formatting. Use plain text and markdown only.
-    Line 1: <audio>[Chinese characters ONLY. Example: 很好 / 不对 / 试试这个]</audio>
-    Line 2: [Pinyin for Line 1 ONLY]
-    Line 3: [Your FULL explanation, feedback, and next question entirely in {ui_lang}. ONLY quote Chinese words inside this text when necessary.]
+    **🚨 OUTPUT FORMAT (FLEXIBLE RENDERING)**:
+    - NEVER use HTML tags like <p> or <br>.
+    - If you are ONLY providing conversational feedback, scaffolding, or pointing out an error: OUTPUT PLAIN TEXT IN {ui_lang} ONLY. Do not use <audio> or Pinyin.
+    - ONLY use the 3-line format (Line 1: <audio>, Line 2: Pinyin, Line 3: {ui_lang} translation) when you are presenting a NEW complete Chinese sentence for the user to practice, or confirming their final correct Chinese sentence.
     """
     header_text = f"🧑‍🏫 {unit_focus_name}"
     welcome_text = "Say **'Hi'** to start your 10-sentence challenge!" if ui_lang == "English" else "¡Di **'Hola'** para comenzar el reto!"
@@ -286,14 +288,12 @@ if prompt:
                 try:
                     if chunk.text:
                         full_response += chunk.text
-                        # 🌟 Python 底层杀毒：强制剔除可能影响排版的 HTML <p> 标签
                         live_display = re.sub(r'</?p>', '', full_response)
                         live_display = live_display.replace('<audio>', '').replace('</audio>', '')
                         message_placeholder.markdown(live_display + " ▌")
                 except ValueError:
                     pass
             
-            # 最终渲染时彻底清理标签
             display_text = re.sub(r'</?p>', '', full_response)
             display_text = display_text.replace('<audio>', '').replace('</audio>', '')
             message_placeholder.markdown(display_text)
