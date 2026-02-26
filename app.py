@@ -163,36 +163,40 @@ if "Teacher" in role_mode or "Profesor" in role_mode:
             break
     cumulative_vocab = ", ".join(cumulative_vocab_list)
     
-    # 🌟 终极教研补丁：克制力、多样性、严谨音频格式
+    # 🌟 名师级补丁：取消预设、逐层鹰架、精准替换、随机性、5句复习
     SYSTEM_PROMPT = f"""
     You are a STRICT but highly skilled Chinese Grammar Teacher. {LANGUAGE_PROTOCOL}
     **Current Unit Focus**: {unit_focus_name}
     
     **🛑 PURE LANGUAGE FEEDBACK RULE**: 
-    Your evaluations, grammar explanations, and instructions MUST BE 100% in {ui_lang}. NEVER use Chinese phrases like "很好" or "不对" for feedback. TRANSLATE all grammar rules into {ui_lang} before explaining them.
+    Your evaluations, grammar explanations, and instructions MUST BE 100% in {ui_lang}. NEVER use Chinese phrases like "很好" or "不对" for feedback. 
     
-    **🛑 VOCABULARY & GENERAL ACTION RULE**: 
-    1. ONLY use words from Unit 1 to current unit: [{cumulative_vocab}]. Exception: If introducing a specific noun that requires a basic measure word, you can gently teach it.
-    2. For general actions like "read books" (看书), DO NOT force measure words like "本".
+    **🎲 RANDOMIZATION RULE**: 
+    Whenever you generate a new sentence or example, you MUST randomly change the days, dates, subjects, and locations. Never repeat "Thursday" or "January 1st" consecutively.
     
-    **🧠 WORKFLOW & CHALLENGE DIVERSITY (CRITICAL)**:
-    - **Step 1 (Teach & Challenge)**: Explain the grammar point, provide ONE example sentence, and then give a translation challenge. 
-      -> *DIVERSITY RULE*: The challenge sentence MUST use COMPLETELY DIFFERENT nouns, times, or verbs from your example. Do NOT just change the pronoun (e.g., If example is "I go to school", the challenge should be "Tomorrow he goes to the hospital").
-      -> *NO PREMATURE HINTS*: DO NOT mention the "answer-first scaffolding method" before they answer. Just give the challenge and WAIT.
-    - **Step 2 (Evaluate)**: 
-      -> If correct: Praise in {ui_lang} and move to the next concept.
-      -> If incorrect (especially for WH-questions): ONLY NOW do you trigger the Scaffolding Script below.
+    **🧠 THE "TEST-FIRST" DYNAMIC SCAFFOLDING WORKFLOW (CRITICAL)**:
+    - **Step 1 (Direct Challenge)**: Introduce the topic and DIRECTLY ask them to translate a sentence. DO NOT give the grammar structure or examples yet. Let the student try. -> STOP AND WAIT.
+    - **Step 2 (If Correct)**: Praise them, output the correct sentence in the <audio> format, and give the next challenge.
+    - **Step 3 (If Incorrect - 1st Time)**: Give them the grammar "Structure" as a scaffold. Do not give the answer. Ask them to try again. -> STOP AND WAIT.
+    - **Step 4 (If Incorrect - 2nd Time)**: Comfort them patiently (e.g., "Don't worry, it's tricky"). Guide them to observe the structure. NOW provide ONE clear example sentence. Ask them to try their challenge again. -> STOP AND WAIT.
 
-    **🧠 THE "ANSWER-FIRST" SCAFFOLDING SCRIPT**:
-    If a student translates a WH-question incorrectly (foreign word order), use this exact approach:
-    - Scaffold 1: Gently say, "That's typical foreign language thinking! Let's switch to Chinese thinking. In Chinese, the word order for special questions is EXACTLY the same as declarative sentences. First, how do you say the answer: [e.g., 'Tomorrow is Friday']?" -> STOP AND WAIT FOR REPLY.
-    - Scaffold 2: Once they say the declarative sentence, say "Great. Now look at your sentence. The specific information is the number [e.g., 5]. To make it a question, we ONLY replace the number [5] with the question word for numbers: 几. Try it! Don't touch any other words." -> STOP AND WAIT FOR REPLY.
+    **🧠 STRICT WH-QUESTION SCAFFOLDING (THE "PRECISE KEYWORD" METHOD)**:
+    If they fail a WH-question (like "Which day of the week is tomorrow?"):
+    - Scaffold 1: "That's typical foreign language thinking! Let's switch to Chinese thinking. First, how do you say the declarative answer: [e.g., 'Tomorrow is Wednesday']?" -> STOP AND WAIT.
+    - Scaffold 2: "Great. Now, Chinese thinking is very precise. We ONLY replace the specific keyword. Look at '星期三'. You MUST ONLY replace the number '三' with the question word '几'. DO NOT replace the whole word '星期三'. Try it!" -> STOP AND WAIT.
     
-    **🚨 STRICT OUTPUT FORMATTING**:
-    - NO HTML TAGS (<p>, <br>).
-    - **CRITICAL AUDIO RULE**: When you use the audio tag, it MUST BE EXACTLY `<audio>Chinese text</audio>`. NEVER add attributes like `src=...` or URLs inside the tag.
-    - If you are ONLY giving feedback or scaffolding: Output PLAIN TEXT in {ui_lang}.
-    - If you are providing a NEW target Chinese sentence or confirming a correct Chinese sentence: Use the 3-line format (Line 1: <audio>, Line 2: Pinyin, Line 3: {ui_lang}).
+    **🎯 CONSOLIDATION RULE**: 
+    Once a student finally gets the correct answer after a scaffolding process, you MUST immediately give them ONE MORE similar bonus question to consolidate their thinking process before moving on.
+    
+    **📝 FINAL REVIEW RULE**:
+    When finishing the topic or if the user asks for a review, you MUST provide a review consisting of EXACTLY 5 sentences, tested one by one.
+    
+    **🚨 AUDIO & FORMATTING RULE**:
+    - Every time you introduce a target Chinese sentence or confirm their correct Chinese sentence, you MUST output it in this 3-line format:
+      Line 1: <audio>[Chinese characters ONLY]</audio>
+      Line 2: [Pinyin for Line 1 ONLY]
+      Line 3: [Your feedback/explanation in {ui_lang}]
+    - This ensures the audio button appears stably. NEVER put URLs in the audio tag.
     """
     header_text = f"🧑‍🏫 {unit_focus_name}"
     welcome_text = "Say **'Hi'** to start your 10-sentence challenge!" if ui_lang == "English" else "¡Di **'Hola'** para comenzar el reto!"
@@ -207,8 +211,6 @@ elif "Friend" in role_mode or "Amigo" in role_mode:
     2. **EMPATHY FIRST**: If user expresses frustration/sadness, DO NOT say "哦" or ask random questions. Validate feelings first. Comfort them.
     
     **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES)**:
-    NEVER use <p>, <br>, or any HTML formatting.
-    For the audio tag, it MUST BE EXACTLY `<audio>Chinese text</audio>`. NEVER add attributes like `src=...` or URLs.
     Line 1: <audio>[ALL of your Chinese response here]</audio>
     Line 2: [Pinyin for Line 1]
     Line 3: [Translation of Line 1 in {ui_lang}]
@@ -228,8 +230,6 @@ else:
     **Rules**: Never break character. 
     
     **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES)**:
-    NEVER use <p>, <br>, or any HTML formatting.
-    For the audio tag, it MUST BE EXACTLY `<audio>Chinese text</audio>`. NEVER add attributes like `src=...` or URLs.
     Line 1: <audio>[ALL of your Chinese response here]</audio>
     Line 2: [Pinyin for Line 1]
     Line 3: [Translation of Line 1 in {ui_lang}]
@@ -253,6 +253,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         if "audio_path" in message and message["audio_path"]:
+            # 🌟 取消 autoplay=True，改由学生手动点击播放
             st.audio(message["audio_path"], format="audio/mp3")
 
 if not st.session_state.messages:
@@ -297,7 +298,6 @@ if prompt:
                 try:
                     if chunk.text:
                         full_response += chunk.text
-                        # 🌟 强力杀毒：剔除 p 标签，且无视 AI 伪造的任何 audio 属性，直接抹除整个标签显示
                         live_display = re.sub(r'</?p>', '', full_response)
                         live_display = re.sub(r'<audio[^>]*>', '', live_display)
                         live_display = live_display.replace('</audio>', '')
@@ -305,13 +305,11 @@ if prompt:
                 except ValueError:
                     pass
             
-            # 最终展示清理
             display_text = re.sub(r'</?p>', '', full_response)
             display_text = re.sub(r'<audio[^>]*>', '', display_text)
             display_text = display_text.replace('</audio>', '')
             message_placeholder.markdown(display_text)
             
-            # 🌟 强力提取：兼容 AI 偶尔抽风加上 src 属性的情况，确保提取到里面的中文
             audio_texts = re.findall(r'<audio[^>]*>(.*?)</audio>', full_response, flags=re.DOTALL)
             
             audio_file_path = None
@@ -319,7 +317,8 @@ if prompt:
                 with st.spinner("🎵 Generating voice..." if ui_lang == "English" else "🎵 Generando voz..."):
                     text_to_speak = "。".join(audio_texts)
                     audio_file_path = generate_tts_audio(text_to_speak, selected_voice_code, selected_speed_rate)
-                    st.audio(audio_file_path, format="audio/mp3", autoplay=True) 
+                    # 🌟 同样在这里取消自动播放
+                    st.audio(audio_file_path, format="audio/mp3") 
 
             st.session_state.messages.append({
                 "role": "assistant", 
