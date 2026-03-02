@@ -1,334 +1,101 @@
 import streamlit as st
-import os
-import google.generativeai as genai
-import asyncio
-import edge_tts
-import tempfile
-import re
-import random  
-from streamlit_mic_recorder import speech_to_text
-
-# --- 1. 页面与全局配置 ---
-st.set_page_config(
-    page_title="Long Wen Hub",
-    page_icon="🐲",
-    layout="wide"
-)
+import random
 
 # ==========================================
-# 🔑 核心魔法：智能密钥轮询池 (API Key Pooling)
-# ==========================================
-raw_keys = os.environ.get("GOOGLE_API_KEY")
-if not raw_keys:
-    st.error("⚠️ Error: API Key not found. Please set GOOGLE_API_KEY in Render.")
-    st.stop()
-
-API_KEYS = [k.strip() for k in raw_keys.split(",") if k.strip()]
-
-if not API_KEYS:
-    st.error("⚠️ Error: No valid API Keys found.")
-    st.stop()
-
-selected_key = random.choice(API_KEYS)
-genai.configure(api_key=selected_key)
-
-# ==========================================
-# 📚 核心知识库 & 剧本库 (Knowledge & Scenarios)
+# 1. 完整语料库 (KNOWLEDGE_BASE) - 严禁自我发挥
+# 这里的每一句都直接提取自你的 PDF 课件
 # ==========================================
 KNOWLEDGE_BASE = {
-    "u1": {"title_en": "Unit 1: Greetings", "title_es": "Unidad 1: Saludos", "grammar": "1. 人称复数加 '们'. 2. 打招呼: 你好, 您好.", "vocab": "我, 你, 他, 她, 您, 们, 好, 再见"},
-    "u2": {"title_en": "Unit 2: Names & Apologies", "title_es": "Unidad 2: Nombres y disculpas", "grammar": "1. 对不起 vs 没关系. 2. 什么 (What) 放动词后.", "vocab": "叫, 什么, 名字, 是, 老师, 吗, 学生, 人, 对不起, 没关系"},
-    "u3": {"title_en": "Unit 3: Nationality & SVO", "title_es": "Unidad 3: Nacionalidad y Estructura SVO", "grammar": "1. 国家+人. 2. 严格 SVO 结构. 3. 否定词'不'在动词前.", "vocab": "有, 个, 爸爸, 妈妈, 哥哥, 弟弟, 妹妹, 和, 没, 不"},
-    "u4": {"title_en": "Unit 4: Particles 'de' & 'ne'", "title_es": "Unidad 4: Partículas 'de' y 'ne'", "grammar": "1. 归属词 '的'. 2. 疑问词 '呢' (你的呢?). 3. 哪国不倒装.", "vocab": "他, 她, 谁, 的, 汉语, 哪, 国, 呢, 同学, 朋友"},
-    "u5": {"title_en": "Unit 5: Numbers & Measure Words", "title_es": "Unidad 5: Números y Clasificadores", "grammar": "1. 必须使用量词 (Number+MW+Noun). 2. '几'的用法.", "vocab": "几, 岁, 了, 今年, 多, 大, 两, 个, 口, 狗, 猫, 杯子, 朋友"},
-    "u6": {"title_en": "Unit 6: 'hui' & 'zenme'", "title_es": "Unidad 6: 'hui' y 'zenme'", "grammar": "1. 会 (can). 2. 怎么 (how to).", "vocab": "会, 说, 菜, 很, 好吃, 做, 写, 汉字, 字, 怎么, 读"},
-    "u7": {"title_en": "Unit 7: Dates & '去' (qù)", "title_es": "Unidad 7: Fechas y '去' (qù)", "grammar": "1. 时间从大到小. 2. 去+地点.", "vocab": "请, 问, 今天, 号, 月, 星期, 昨天, 明天, 去, 学校, 看, 书"},
-    "u8": {"title_en": "Unit 8: 'xiang' & Prices", "title_es": "Unidad 8: 'xiang' y Precios", "grammar": "1. 想 (want to). 2. 多少钱 (how much).", "vocab": "想, 喝, 茶, 吃, 米饭, 下午, 商店, 买, 个, 杯子, 这, 多少, 钱, 块, 那"},
-    "u9": {"title_en": "Unit 9: Location Words", "title_es": "Unidad 9: Palabras de ubicación", "grammar": "方位词在名词后. 在+地方.", "vocab": "小, 猫, 在, 那儿, 狗, 椅子, 下面, 哪儿, 工作, 儿子, 医院, 医生"},
-    "u10_15": {"title_en": "Units 10-15: Comprehensive", "title_es": "Unidades 10-15: Repaso general", "grammar": "综合复习", "vocab": "HSK1 全部词汇"}
+    "u1": {"title": "Unit 1: 你好", "sentences": ["你好！", "您好！", "你们好！", "再见！"], "dialogues": [{"p": "你好！", "r": "你好！"}]},
+    "u2": {"title": "Unit 2: 谢谢你", "sentences": ["谢谢！", "不客气。", "不谢。", "对不起！", "没关系。"], "dialogues": [{"p": "谢谢！", "r": "不客气。"}]},
+    "u3": {"title": "Unit 3: 你叫什么名字", "sentences": ["我是老师。", "你们是学生。", "他们是西班牙人。", "我叫 Lucia。", "我不是老师。", "你是中国人吗？", "你叫什么名字？"], "dialogues": [{"p": "你叫什么名字？", "r": "我叫[学生名]。"}]},
+    "u4": {"title": "Unit 4: 你是哪国人", "sentences": ["我的老师。", "你的同学。", "中国老师。", "汉语老师。", "西班牙语学生。", "他们是谁？", "你是哪国人？", "我是美国人，你呢？"], "dialogues": [{"p": "你是哪国人？", "r": "我是西班牙人。"}]},
+    "u5": {"title": "Unit 5: 你今年几岁了", "sentences": ["一只狗。", "三只猫。", "四口人。", "两只狗。", "两个老师。", "你有几只狗？", "我有四只狗。", "你家有几口人？", "我家有五口人。", "你女儿几岁了？", "我女儿四岁了。", "你今年多大了？", "我三十岁了。"], "dialogues": [{"p": "你家有几口人？", "r": "我家有[数字]口人。"}]},
+    "u6": {"title": "Unit 6: 我会说汉语", "sentences": ["我妈妈会说汉语。", "我不会写汉字。", "你会做中国菜吗？", "谁会说西班牙语？", "中国菜很好吃。", "汉字怎么写？", "中国菜怎么做？", "你妈妈怎么会说汉语？", "这个汉字怎么读？"], "dialogues": [{"p": "你会说汉语吗？", "r": "我会说一点儿。"}]},
+    "u7": {"title": "Unit 7: 今天几月几号", "sentences": ["今天是三月二号。", "明天星期几？", "昨天几号？", "我朋友去学校。", "我们去学校看书。", "请说汉语。", "请问。", "我们明天去你家。", "你几月去中国？", "我九月去中国。"], "dialogues": [{"p": "今天几号？", "r": "今天2号。"}]},
+    "u8": {"title": "Unit 8: 你想吃什么", "sentences": ["你想喝什么？", "我想喝茶。", "你想吃什么？", "我想吃米饭。", "下午我想去商店。", "你想买什么？", "我想买一个杯子。", "这个杯子多少钱？", "那个杯子十八块。", "你们学校有多少个学生？"], "dialogues": [{"p": "你想吃什么？", "r": "我想吃米饭。"}]},
+    "u9": {"title": "Unit 9: 你在哪儿工作", "sentences": ["我在吃饭。", "你在做什么？", "你儿子在哪儿工作？", "我儿子在医院工作。", "你爸爸在这家医院工作？", "你的小猫在哪儿？", "我的小猫在那儿。", "小猫在椅子下面。", "这儿有大医院吗？"], "dialogues": [{"p": "他在做什么？", "r": "他在学习。"}]},
+    "u10": {"title": "Unit 10: 桌子上有什么", "sentences": ["桌子上有一个电脑和两本汉语书。", "我能坐在这儿吗？", "请你坐在她后面。", "这个学校后面没有大商店。", "椅子下面的书是谁的？", "在买书的那个（人）是我女儿。", "她是你说的那个人吗？"], "dialogues": [{"p": "椅子下面的书是谁的？", "r": "是我的。"}]},
+    "u11": {"title": "Unit 11: 现在几点", "sentences": ["现在十点十分。", "女儿今天几点回家？", "妈妈，我们什么时候去看电影？", "你这个星期一前能回家吗？", "回家前，我想去看一个电影。", "我想去北京住三天。", "我女儿吃饭前想读三十分钟书。"], "dialogues": [{"p": "现在几点？", "r": "现在三点。"}]},
+    "u12": {"title": "Unit 12: 明天天气怎么样", "sentences": ["北京的天气怎么样？", "你妈妈做的饭太好吃了。", "这本书不太好看。", "这些水果太好吃了。", "我想喝一些中国茶。", "明天会下雨吗？", "明天李小姐会来吗？", "多喝热水，多吃米饭。"], "dialogues": [{"p": "今天天气怎么样？", "r": "太冷了。"}]},
+    "u13": {"title": "Unit 13: 她在打电话呢", "sentences": ["我喜欢在家看电视。", "你在做什么呢？", "她在和朋友们喝茶。", "我们下午去商店买些水果吧！", "你明天来我家吧！", "我想给你这本书。", "你在给谁打电话？"], "dialogues": [{"p": "你在做什么呢？", "r": "我在学习。"}]},
+    "u14": {"title": "Unit 14: 她买了不少东西", "sentences": ["她买了不少东西。", "我昨天看见李老师了。", "我今天买了不少水果。", "我给她买了一件漂亮的衣服。", "我去商店了，但是没买水果。", "我今天想学二十分钟汉语。"], "dialogues": [{"p": "你买什么了？", "r": "我买了点儿水果。"}]},
+    "u15": {"title": "Unit 15: 我是坐飞机来的", "sentences": ["听说你认识王先生。", "我坐出租车去他家。", "我们是两年前认识的。", "我们是在大学认识的。", "我在火车上看见他的。", "我是和朋友们一起坐飞机回来的。", "这本书不是在这家书店买的。"], "dialogues": [{"p": "你们怎么认识的？", "r": "我们是大学同学。"}]}
 }
 
-SCENARIOS = {
-    "cafe": {
-        "title_en": "☕ At the Cafe", "title_es": "☕ En la cafetería",
-        "npc_prompt": "You are a polite barista at a cafe in Beijing. You ONLY sell Tea (茶) and Water (水), NO coffee.",
-        "mission_en": "Order a cup of tea and ask how much it costs.", "mission_es": "Pide una taza de té y pregunta cuánto cuesta."
-    },
-    "taxi": {
-        "title_en": "🚕 Taking a Taxi", "title_es": "🚕 Tomar un taxi",
-        "npc_prompt": "You are a Beijing taxi driver. You speak fast but use simple words. Ask the passenger where they want to go.",
-        "mission_en": "Tell the driver you want to go to the hospital (医院).", "mission_es": "Dile al conductor que quieres ir al hospital (医院)."
-    },
-    "shop": {
-        "title_en": "🍎 Buying Fruit", "title_es": "🍎 Comprando fruta",
-        "npc_prompt": "You are a fruit seller. You are very enthusiastic. Apples (苹果) are 5 Kuai (块) each.",
-        "mission_en": "Buy 3 apples and ask for the total price. Don't forget the measure word (个)!", "mission_es": "Compra 3 manzanas y pregunta el precio total. ¡No olvides el clasificador (个)!"
-    }
-}
+# ==========================================
+# 2. 核心教学逻辑引擎
+# ==========================================
+def main():
+    try:
+        st.set_page_config(page_title="PREDC1 HSK Tutor", layout="centered")
+        st.title("HSK 1 Web Version - Original Reproduction")
 
-VOICE_OPTIONS = {
-    "🇨🇳 晓晓 (Xiaoxiao - 女声)": "zh-CN-XiaoxiaoNeural",
-    "🇨🇳 云希 (Yunxi - 男声)": "zh-CN-YunxiNeural",
-    "🇪🇸 Elvira (西班牙语 - 女声)": "es-ES-ElviraNeural",
-    "🇪🇸 Álvaro (西班牙语 - 男声)": "es-ES-AlvaroNeural",
-    "🇬🇧 Jenny (英语 - 女声)": "en-US-JennyNeural",
-    "🇬🇧 Guy (英语 - 男声)": "en-US-GuyNeural"
-}
+        if 'unit' not in st.session_state: st.session_state.unit = "u1"
+        if 'count' not in st.session_state: st.session_state.count = 0
+        if 'mode' not in st.session_state: st.session_state.mode = "translation"
 
-def generate_tts_audio(text, voice_code, rate="+0%"):
-    async def _generate():
-        communicate = edge_tts.Communicate(text, voice_code, rate=rate)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-            temp_path = fp.name
-        await communicate.save(temp_path)
-        return temp_path
-    return asyncio.run(_generate())
-
-# --- 2. 侧边栏 UI 设置 ---
-with st.sidebar:
-    st.image("https://img.icons8.com/color/96/dragon.png", width=80)
-    ui_lang = st.radio("🌐 UI Language / Idioma:", ["English", "Español"], horizontal=True)
-    
-    if ui_lang == "English":
-        st.title("🐲 Long Wen Hub")
-        btn_clear = "🧹 Clear History"
-        lbl_mode = "🎭 Select Mode:"
-        mode_options = ["🧑‍🏫 Teacher (Grammar)", "🧑‍🤝‍🧑 Friend (Chat)", "🎬 Roleplay (Scenarios)"]
-        lbl_unit = "📖 Select Unit:"
-        lbl_level = "📊 Friend's Level:"
-        lbl_scenario = "🎬 Select Scenario:"
-        lbl_voice = "🗣️ AI Voice:"
-        lbl_speed = "⏱️ Voice Speed:"
-        level_options = ["HSK 1", "HSK 2", "HSK 3", "🌟 Adaptive Mode"]
-    else:
-        st.title("🐲 Centro Long Wen")
-        btn_clear = "🧹 Borrar historial"
-        lbl_mode = "🎭 Elige el modo:"
-        mode_options = ["🧑‍🏫 Profesor (Gramática)", "🧑‍🤝‍🧑 Amigo (Chat)", "🎬 Roleplay (Escenarios)"]
-        lbl_unit = "📖 Elige la unidad:"
-        lbl_level = "📊 Nivel del amigo:"
-        lbl_scenario = "🎬 Elige el escenario:"
-        lbl_voice = "🗣️ Voz de la IA:"
-        lbl_speed = "⏱️ Velocidad de Voz:"
-        level_options = ["HSK 1", "HSK 2", "HSK 3", "🌟 Modo Adaptativo"]
-
-    if st.button(btn_clear, use_container_width=True):
-        st.session_state.messages = []
-        st.rerun()
+        # 单元选择
+        st.session_state.unit = st.sidebar.selectbox("选择单元", list(KNOWLEDGE_BASE.keys()), 
+                                                     format_func=lambda x: KNOWLEDGE_BASE[x]['title'])
         
-    st.markdown("---")
-    
-    selected_voice_label = st.selectbox(lbl_voice, options=list(VOICE_OPTIONS.keys()))
-    selected_voice_code = VOICE_OPTIONS[selected_voice_label]
-    
-    speed_labels = ["🐢 Slow / Lento (-25%)", "🚶 Normal", "🏃 Fast / Rápido (+20%)"]
-    speed_values = ["-25%", "+0%", "+20%"]
-    selected_speed_index = st.selectbox(lbl_speed, range(len(speed_labels)), index=1, format_func=lambda x: speed_labels[x])
-    selected_speed_rate = speed_values[selected_speed_index]
-    
-    st.markdown("---")
-    role_mode = st.radio(lbl_mode, mode_options)
-    st.markdown("---")
-    
-    selected_unit_key, hsk_level_text, selected_scenario_key = None, None, None
-    
-    if "Teacher" in role_mode or "Profesor" in role_mode:
-        selected_unit_key = st.selectbox(lbl_unit, options=list(KNOWLEDGE_BASE.keys()), format_func=lambda x: KNOWLEDGE_BASE[x]["title_en"] if ui_lang == "English" else KNOWLEDGE_BASE[x]["title_es"])
-    elif "Friend" in role_mode or "Amigo" in role_mode:
-        selected_level_index = st.selectbox(lbl_level, options=range(len(level_options)), format_func=lambda x: level_options[x])
-        hsk_level_text = level_options[selected_level_index]
-    else:
-        selected_scenario_key = st.selectbox(lbl_scenario, options=list(SCENARIOS.keys()), format_func=lambda x: SCENARIOS[x]["title_en"] if ui_lang == "English" else SCENARIOS[x]["title_es"])
+        unit_data = KNOWLEDGE_BASE[st.session_state.unit]
 
-    current_config = f"{role_mode}_{selected_unit_key}_{hsk_level_text}_{selected_scenario_key}_{ui_lang}"
-    if "last_config" not in st.session_state:
-        st.session_state.last_config = current_config
-    
-    if st.session_state.last_config != current_config:
-        st.session_state.messages = []
-        st.session_state.last_config = current_config
-        st.rerun()
+        # 1. 翻译挑战环节 (必须完成10句或该单元全部句子)
+        if st.session_state.mode == "translation":
+            target_list = unit_data['sentences']
+            idx = st.session_state.count % len(target_list)
+            target = target_list[idx]
 
-# --- 3. 动态构建 AI 大脑 ---
-LANGUAGE_PROTOCOL = f"**CRITICAL UI LANGUAGE**: The user's interface is **{ui_lang}**. Communicate with the user in {ui_lang} (except for the Chinese)."
-
-if "Teacher" in role_mode or "Profesor" in role_mode:
-    current_unit_data = KNOWLEDGE_BASE[selected_unit_key]
-    unit_focus_name = current_unit_data["title_en"] if ui_lang == "English" else current_unit_data["title_es"]
-    
-    cumulative_vocab_list = []
-    for key, data in KNOWLEDGE_BASE.items():
-        cumulative_vocab_list.append(data['vocab'])
-        if key == selected_unit_key:
-            break
-    cumulative_vocab = ", ".join(cumulative_vocab_list)
-    
-    # 🌟 修复：加入严格的超纲词汇警报协议
-    SYSTEM_PROMPT = f"""
-    You are a STRICT but highly skilled Chinese Grammar Teacher. {LANGUAGE_PROTOCOL}
-    **Current Unit Focus**: {unit_focus_name}
-    
-    **🛑 PURE LANGUAGE FEEDBACK RULE**: 
-    Your evaluations, grammar explanations, and instructions MUST BE 100% in {ui_lang}. NEVER use Chinese phrases like "很好" or "不对" for feedback. 
-    
-    **🛑 VOCABULARY & OUT-OF-VOCABULARY (OOV) PROTOCOL (CRITICAL)**: 
-    1. Base vocabulary: You MUST prioritize using words from Unit 1 to the current unit: [{cumulative_vocab}].
-    2. OOV Allowance: To create diverse challenge sentences, you are allowed a MAXIMUM of 1 "Extra Word" (e.g., a new location like "park" or "library") per challenge.
-    3. OOV Declaration: If you introduce an Extra Word in a translation challenge, you MUST declare it clearly in {ui_lang} immediately after presenting the challenge. Format: *(Extra word: [English meaning] = [Chinese character] [Pinyin])*
-       Example: Please translate "He goes to the park." *(Extra word: park = 公园 gōngyuán)*
-    
-    **🎲 RANDOMIZATION RULE**: 
-    Whenever you generate a new sentence or example, you MUST randomly change the days, dates, subjects, and locations. Never repeat "Thursday" or "January 1st" consecutively.
-    
-    **🧠 THE "TEST-FIRST" DYNAMIC SCAFFOLDING WORKFLOW**:
-    - Step 1: Introduce the topic and DIRECTLY ask them to translate a sentence. -> STOP AND WAIT.
-    - Step 2: If Correct, praise, output audio, and give the next challenge.
-    - Step 3: If Incorrect (1st Time), give the grammar structure. -> STOP AND WAIT.
-    - Step 4: If Incorrect (2nd Time), provide ONE example sentence. -> STOP AND WAIT.
-
-    **🧠 STRICT WH-QUESTION SCAFFOLDING (THE "PRECISE KEYWORD" METHOD)**:
-    If they fail a WH-question:
-    - Scaffold 1: "That's typical foreign language thinking! Let's switch to Chinese thinking. First, how do you say the declarative answer: [e.g., 'Tomorrow is Wednesday']?" -> STOP AND WAIT.
-    - Scaffold 2: "Great. Now, Chinese thinking is very precise. Look at '星期三'. We ONLY replace the number '三' with the question word for numbers: '几'. Try it!" -> STOP AND WAIT.
-    
-    **🎯 CONSOLIDATION RULE**: 
-    Once a student finally gets the correct answer after a scaffolding process, you MUST immediately give them ONE MORE similar bonus question.
-    
-    **📝 FINAL REVIEW RULE**:
-    When finishing the topic or if the user asks for a review, you MUST provide a review consisting of EXACTLY 5 sentences, tested one by one.
-    
-    **🚨 AUDIO & FORMATTING RULE**:
-    - NO HTML TAGS (<p>, <br>).
-    - Every time you introduce a target Chinese sentence or confirm their correct Chinese sentence, you MUST output it in this 3-line format:
-      Line 1: <audio>[Chinese characters ONLY]</audio>
-      Line 2: [Pinyin for Line 1 ONLY]
-      Line 3: [Your feedback/explanation in {ui_lang}]
-    """
-    header_text = f"🧑‍🏫 {unit_focus_name}"
-    welcome_text = "Say **'Hi'** to start your 10-sentence challenge!" if ui_lang == "English" else "¡Di **'Hola'** para comenzar el reto!"
-
-elif "Friend" in role_mode or "Amigo" in role_mode:
-    SYSTEM_PROMPT = f"""
-    You are a highly emotionally intelligent (High EQ) Chinese Language Partner.
-    {LANGUAGE_PROTOCOL}
-    
-    **YOUR TASK & EMPATHY RULES**:
-    1. **DYNAMIC LEVEL**: Base level is {hsk_level_text}. If user uses complex words or expresses deep emotions, ABANDON the {hsk_level_text} limit and speak naturally!
-    2. **EMPATHY FIRST**: If user expresses frustration/sadness, DO NOT say "哦" or ask random questions. Validate feelings first. Comfort them.
-    
-    **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES)**:
-    Line 1: <audio>[ALL of your Chinese response here]</audio>
-    Line 2: [Pinyin for Line 1]
-    Line 3: [Translation of Line 1 in {ui_lang}]
-    """
-    header_text = "🧑‍🤝‍🧑 Language Partner" if ui_lang == "English" else "🧑‍🤝‍🧑 Compañero de Idiomas"
-    welcome_text = "Say **'Hi'** to chat!" if ui_lang == "English" else "¡Di **'Hola'** para charlar!"
-
-else:
-    current_scenario = SCENARIOS[selected_scenario_key]
-    scenario_title = current_scenario["title_en"] if ui_lang == "English" else current_scenario["title_es"]
-    mission_text = current_scenario["mission_en"] if ui_lang == "English" else current_scenario["mission_es"]
-    
-    SYSTEM_PROMPT = f"""
-    You are playing a role in a simulation. {LANGUAGE_PROTOCOL}
-    **Your Persona**: {current_scenario['npc_prompt']}
-    **User's Mission**: {mission_text}
-    **Rules**: Never break character. 
-    
-    **🚨 OUTPUT TEMPLATE (STRICTLY 3 LINES)**:
-    Line 1: <audio>[ALL of your Chinese response here]</audio>
-    Line 2: [Pinyin for Line 1]
-    Line 3: [Translation of Line 1 in {ui_lang}]
-    """
-    header_text = f"🎬 {scenario_title}"
-    welcome_text = f"**Mission / Misión:** {mission_text}\n\nSay **'Hi'** to enter the scenario!" if ui_lang == "English" else f"**Misión:** {mission_text}\n\n¡Di **'Hola'** para entrar al escenario!"
-
-try:
-    model = genai.GenerativeModel(model_name="gemini-2.5-flash", system_instruction=SYSTEM_PROMPT)
-except Exception as e:
-    st.error(f"Error: {e}")
-    st.stop()
-
-# --- 4. 聊天界面渲染 ---
-st.header(header_text)
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-        if "audio_path" in message and message["audio_path"]:
-            st.audio(message["audio_path"], format="audio/mp3")
-
-if not st.session_state.messages:
-    st.info(welcome_text)
-
-# --- 5. 双向输入区 (文字 + 麦克风) ---
-col1, col2 = st.columns([5, 1])
-chat_placeholder = "Type here..." if ui_lang == "English" else "Escribe aquí..."
-spoken_text = None
-
-with col1:
-    written_text = st.chat_input(chat_placeholder)
-
-with col2:
-    spoken_text = speech_to_text(
-        language='zh-CN',
-        start_prompt="🎤",
-        stop_prompt="⏹️",
-        just_once=True,
-        key='STT'
-    )
-
-prompt = written_text or spoken_text
-
-if prompt:
-    st.chat_message("user").markdown(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        try:
-            safe_history = []
-            for m in st.session_state.messages[:-1]:
-                role_name = "model" if m["role"] == "assistant" else "user"
-                safe_history.append({"role": role_name, "parts": [m["content"]]})
-                
-            chat = model.start_chat(history=safe_history)
-            response = chat.send_message(prompt, stream=True)
+            st.info(f"进度: {st.session_state.count + 1} / 10")
+            st.subheader(f"请翻译: {target}")
             
-            full_response = ""
-            for chunk in response:
-                try:
-                    if chunk.text:
-                        full_response += chunk.text
-                        live_display = re.sub(r'</?p>', '', full_response)
-                        live_display = re.sub(r'<audio[^>]*>', '', live_display)
-                        live_display = live_display.replace('</audio>', '')
-                        message_placeholder.markdown(live_display + " ▌")
-                except ValueError:
-                    pass
-            
-            display_text = re.sub(r'</?p>', '', full_response)
-            display_text = re.sub(r'<audio[^>]*>', '', display_text)
-            display_text = display_text.replace('</audio>', '')
-            message_placeholder.markdown(display_text)
-            
-            audio_texts = re.findall(r'<audio[^>]*>(.*?)</audio>', full_response, flags=re.DOTALL)
-            
-            audio_file_path = None
-            if audio_texts:
-                with st.spinner("🎵 Generating voice..." if ui_lang == "English" else "🎵 Generando voz..."):
-                    text_to_speak = "。".join(audio_texts)
-                    audio_file_path = generate_tts_audio(text_to_speak, selected_voice_code, selected_speed_rate)
-                    st.audio(audio_file_path, format="audio/mp3") 
+            user_input = st.text_input("请输入中文:", key=f"input_{st.session_state.count}")
 
-            st.session_state.messages.append({
-                "role": "assistant", 
-                "content": display_text,
-                "audio_path": audio_file_path
-            })
+            if st.button("提交答案"):
+                # --- 鹰架拦截逻辑 1: 几 + 量词 ---
+                if "几" in user_input:
+                    mws = ["个", "口", "只", "本", "岁", "块"]
+                    if not any(mw in user_input.split("几")[1][:2] for mw in mws if "几" in user_input):
+                        st.warning("⚠️ 提醒：使用'几'询问数量时，不要忘记使用量词（如：个、只、口等）！")
+                        return
+
+                # --- 鹰架拦截逻辑 2: 的 的位置 (定语位置纠偏) ---
+                # 针对 U9/U10 位置描述逻辑：[地点] + 的 + [名词]
+                if any(pos in target for pos in ["上", "下", "前", "后", "里"]) and "的" in target:
+                    # 检查名词是否错位（例如学生写：书在桌子上）
+                    key_nouns = ["书", "水果", "电脑", "猫", "狗"]
+                    for noun in key_nouns:
+                        if noun in user_input and "的" in user_input:
+                            if user_input.find(noun) < user_input.find("的"):
+                                st.warning("⚠️ 注意：中文的描述语（位置/所属）要放在名词前面。公式：[描述语] + 的 + [名词]。")
+                                return
+
+                # 精准匹配校验
+                if user_input.strip() == target:
+                    st.success("正确！")
+                    st.session_state.count += 1
+                    if st.session_state.count >= 10:
+                        st.session_state.mode = "dialogue"
+                    st.rerun()
+                else:
+                    st.error(f"课件标准答案是: {target}")
+
+        # 2. 情景对话环节 (翻译达标后触发)
+        else:
+            st.balloons()
+            st.success("翻译环节完成！现在进行随机情景对话测试。")
+            pair = random.choice(unit_data['dialogues'])
+            st.subheader(f"AI 问: {pair['p']}")
+            st.text_input("你如何回答？", key="dialogue_ans")
             
-        except Exception as e:
-            st.error(f"Error: {e}")
+            if st.button("完成单元"):
+                st.session_state.count = 0
+                st.session_state.mode = "translation"
+                st.rerun()
+
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
