@@ -1,263 +1,161 @@
 import streamlit as st
+import re
 import random
+import time
 
 # ==========================================
-# 1. 全量语料库 (KNOWLEDGE_BASE)
-# 严格按照“无情扫描仪”原则，录入课件每一句例句
+# 1. 核心语料库 (1-15 单元全量例句)
 # ==========================================
 KNOWLEDGE_BASE = {
-    "u1": {
-        "title": "Unit 1",
-        "sentences": ["你好！", "您好！", "你们好！", "再见！"],
-        "dialogues": [{"p": "你好！", "r": "你好！"}, {"p": "再见！", "r": "再见！"}]
-    },
-    "u2": {
-        "title": "Unit 2",
-        "sentences": ["谢谢！", "不客气。", "不谢。", "对不起！", "没关系。"],
-        "dialogues": [{"p": "谢谢！", "r": "不客气。"}, {"p": "对不起！", "r": "没关系。"}]
-    },
-    "u3": {
-        "title": "Unit 3",
-        "sentences": [
-            "我是老师。", "你们是学生。", "他们是西班牙人。", "我叫 Lucia。", 
-            "我不是老师。", "你们不是西班牙人。", "他们不是美国人。", 
-            "我们不是中国学生。", "你是中国人吗？", "你们是西班牙学生吗？", 
-            "他们不是美国老师吗？", "你叫什么名字？"
-        ],
-        "dialogues": [{"p": "你叫什么名字？", "r": "我叫[学生名]。"}]
-    },
-    "u4": {
-        "title": "Unit 4",
-        "sentences": [
-            "我的老师。", "你的同学。", "她的朋友。", "他的名字。", "我们的学生。", 
-            "Lucia 的朋友。", "中国老师。", "汉语老师。", "西班牙语学生。", 
-            "西班牙朋友。", "他们是谁？", "你的老师是谁？", "谁是她的汉语老师？", 
-            "你是谁？", "你们是谁？", "她是谁？", "谁是你的西班牙朋友？", 
-            "你是哪国人？", "你们是哪国学生？", "她是哪国老师？", "我是美国人。", 
-            "我们是西班牙学生。", "她是中国老师。", "我是汉语老师，你呢？", 
-            "我们是西班牙语学生，你们呢？", "我的老师叫李月，你的老师呢？"
-        ],
-        "dialogues": [{"p": "你是哪国人？", "r": "我是西班牙人。"}]
-    },
-    "u5": {
-        "title": "Unit 5",
-        "sentences": [
-            "一只狗。", "三只猫。", "四个人。", "四口人。", "六个中国人。", "两只狗。", 
-            "两个老师。", "两个学生。", "我女儿。", "他家。", "我妈妈。", "我们的女儿。", 
-            "我们的朋友。", "你有几只狗？", "我有四只狗。", "你家有几口人？", 
-            "我家有五口人。", "你女儿几岁？", "我女儿三岁。", "你女儿十岁。", 
-            "你的老师今年多大？", "我的老师今年三十岁。", "你多大了？", 
-            "我三十岁了。", "你女儿几岁了？", "我女儿四岁了。", "你属什么？", "我属马。"
-        ],
-        "dialogues": [{"p": "你家有几口人？", "r": "我家有[数字]口人。"}]
-    },
-    "u6": {
-        "title": "Unit 6",
-        "sentences": [
-            "我妈妈会说汉语。", "我不会写汉字。", "你会做中国菜吗？", "谁会说西班牙语？", 
-            "你会写什么汉字？", "我朋友学汉语。", "你会写几个汉字？", "我会写九个汉字。", 
-            "她是谁的汉语老师？", "她是我的汉语老师。", "谁会说汉语，写汉字？", 
-            "我朋友会说汉语，写汉字。", "中国很大。", "美国不大。", "中国菜很好吃。", 
-            "美国菜不好吃。", "他们是不是汉语老师？", "你会不会说西班牙语？", 
-            "中国菜好吃不好吃？", "美国大不高？", "汉字怎么写？", "中国菜怎么做？", 
-            "汉语怎么学？", "这个汉字怎么读？", "他们怎么有两只狗？", 
-            "你妈妈怎么会说汉语？", "你的汉语老师怎么不说汉语？", "你朋友怎么不吃中国菜？"
-        ],
-        "dialogues": [{"p": "你会做中国菜吗？", "r": "我会做一些。"}]
-    },
-    "u7": {
-        "title": "Unit 7",
-        "sentences": [
-            "一月四号。", "八月十五号。", "十二月三十号。", "今天是三月二号。", 
-            "明天星期几？", "昨天几号？星期几？", "谁去学校？", "我朋友去学校。", 
-            "我们去学校看书。", "你们去妈妈家做中国菜。", "请写您的名字。", 
-            "请吃菜。", "请说汉语。", "请问。", "我们明天去你家。", 
-            "他们今天不学汉语。", "你们星期六不去学校吗？", "你几号去你西班牙朋友家？", 
-            "你哪天去李老师家学汉语？", "李老师星期几去学校？", "你几月去中国？"
-        ],
-        "dialogues": [{"p": "今天几号？", "r": "今天2号。"}]
-    },
-    "u8": {
-        "title": "Unit 8",
-        "sentences": [
-            "你想喝什么？", "我想喝茶。", "你想吃什么？", "我想吃米饭。", 
-            "下午你想做什么？", "下午我想去商店。", "你想买什么？", 
-            "我想买一个杯子。", "你有多少个汉语老师？", "你们学校有多少个学生？", 
-            "这个杯子多少钱？", "那个杯子多少钱？", "三个老师。", "五个学生。", 
-            "一个杯子。", "二十八块钱。", "那个杯子18块。"
-        ],
-        "dialogues": [{"p": "这个多少钱？", "r": "[数字]块。"}]
-    },
-    "u9": {
-        "title": "Unit 9",
-        "sentences": [
-            "我在吃饭。", "你在做什么？", "谁的儿子在工作？", "我爸爸在学做中国菜。", 
-            "她在不在写汉字？", "谁在医院？", "我们在学校。", "她儿子在哪儿工作？", 
-            "我儿子在医院工作。", "你爸爸在这家医院工作？", "我在家工作。", 
-            "在哪家医院工作？", "在谁家学汉语？", "你的小猫在哪儿？", 
-            "那儿有一只小狗。", "我的小猫在那儿。", "这儿有大医院吗？", 
-            "这个椅子下面有什么？", "这个椅子下面有一只小猫。", "几本书在这只猫下面？"
-        ],
-        "dialogues": [{"p": "你在哪儿工作？", "r": "我在学校工作。"}]
-    },
-    "u10": {
-        "title": "Unit 10",
-        "sentences": [
-            "桌子上有一个电脑和两本汉语书。", "我能坐在这儿吗？", "我明天能去我朋友家吗？", 
-            "你们星期一能在你爸爸的医院工作吗？", "对不起，我们不会说汉语。", 
-            "你能不能看前面？", "谁明天不能去学校？", "请你坐在她后面。", 
-            "这个学校后面没有大商店。", "椅子下面的书是谁的？", "你儿子的电脑是哪国的？", 
-            "哪个是你女儿？", "在买书的那个（人）是我女儿。", "她是你说的那个人吗？"
-        ],
-        "dialogues": [{"p": "椅子下面的书是谁的？", "r": "是我的。"}]
-    },
-    "u11": {
-        "title": "Unit 11",
-        "sentences": [
-            "现在几点？", "现在十点十分。", "今天下午三点。", "明天上午十点。", 
-            "十一号上午四点十分。", "三月二十号中午十二点。", "女儿今天几点回家？", 
-            "妈妈，我们什么时候去看电影？", "你们这个月哪天不工作？", 
-            "你这个星期一前能回家吗？", "我下午六点前想到妈妈家。", 
-            "去学校前，我想去买一个杯子。", "我想去中国住三年。", 
-            "我想在马德里住一个月。", "我女儿吃饭前想读三十分钟书。"
-        ],
-        "dialogues": [{"p": "现在几点？", "r": "现在三点。"}]
-    },
-    "u12": {
-        "title": "Unit 12",
-        "sentences": [
-            "你爸妈的身体怎么样？", "北京的天气怎么样？", "你妈妈做的饭太好吃了。", 
-            "这个电影太好看了。", "这本书不太好看。", "这儿的菜很不好吃。", 
-            "这些水果太好吃了。", "我想喝一些中国茶。", "请吃一些水果。", 
-            "明天会下雨吗？", "明天李小姐会来吗？", "她会来我们的医院工作吗？", 
-            "你在和谁说汉语？", "多喝热水，多吃米饭。"
-        ],
-        "dialogues": [{"p": "今天天气怎么样？", "r": "太冷了。"}]
-    },
-    "u13": {
-        "title": "Unit 13",
-        "sentences": [
-            "我喜欢看电视。", "我喜欢在家看电视。", "我不喜欢学习。", "你在做什么（呢）？", 
-            "他在和朋友们喝茶。", "她没（在）读书。", "我们爱吃中国菜，也爱吃西班牙菜。", 
-            "你明天十一点也来吗？", "我不喜欢这个椅子，我女儿也不喜欢。", 
-            "我们下午去商店买些水果吧！", "你明天来我家吧！", "我想给你这本书。", 
-            "你在给谁打电话？", "妈妈总是给我做午饭。"
-        ],
-        "dialogues": [{"p": "你在做什么呢？", "r": "我在看书。"}]
-    },
-    "u14": {
-        "title": "Unit 14",
-        "sentences": [
-            "我们今天七点三十分去她家。", "我今天想学二十分钟汉语。", 
-            "我想喝一点儿咖啡，你呢？", "下午四点后。", "我妈妈二十一号后能回家。", 
-            "今天你去商店买什么了？", "你昨天看见李老师了吗？", 
-            "你昨天在哪儿看见他了？", "我今天买了不少水果。", 
-            "我学了十五分钟汉语。", "我给她买了一件漂亮的衣服。", 
-            "我昨天没去学校学汉语。", "我去商店了，但是没买水果。"
-        ],
-        "dialogues": [{"p": "你买什么了？", "r": "我买了点儿水果。"}]
-    },
-    "u15": {
-        "title": "Unit 15",
-        "sentences": [
-            "听说你认识王先生。", "我听说你是张医生的儿子。", "我坐出租车去他家。", 
-            "谁坐火车去学校？", "你怎么去北京看你妈妈？", "我明天坐火车去北京。", 
-            "我们是两年前认识的。", "我们是在大学认识的。", "我在火车上看见他的。", 
-            "我们是大学同学。", "我是和朋友们一起坐飞机回来的。", 
-            "这本书不是在这家书店买的。"
-        ],
-        "dialogues": [{"p": "你们怎么认识的？", "r": "我们是大学同学。"}]
-    }
+    "u1": {"title": "U1: Hello", "sentences": ["你好！", "您好！", "你们好！", "再见！"], "dialogues": [{"p": "你好！", "r": "你好！"}]},
+    "u2": {"title": "U2: Thanks", "sentences": ["谢谢！", "不客气。", "对不起！", "没关系。"], "dialogues": [{"p": "谢谢！", "r": "不客气。"}]},
+    "u3": {"title": "U3: Name", "sentences": ["我叫 Lucia。", "你叫什么名字？", "我是老师。", "你是中国人吗？"], "dialogues": [{"p": "你叫什么名字？", "r": "我叫[Nombre]."}]},
+    "u4": {"title": "U4: Nationality", "sentences": ["你是哪国人？", "我是美国人，你呢？", "谁是你的汉语老师？"], "dialogues": [{"p": "你是哪国人？", "r": "我是西班牙人。"}]},
+    "u5": {"title": "U5: Age/Family", "sentences": ["你家有几口人？", "我有四只狗。", "你女儿几岁了？", "我女儿四岁了。", "你今年多大了？", "我三十岁了。"], "dialogues": [{"p": "你家有几口人？", "r": "我家有四口人。"}]},
+    "u6": {"title": "U6: Ability/How", "sentences": ["我妈妈会说汉语。", "你会做中国菜吗？", "汉字怎么写？", "中国菜很好吃。", "你会写几个汉字？"], "dialogues": [{"p": "你会说汉语吗？", "r": "我会说一点儿。"}]},
+    "u7": {"title": "U7: Date/Week", "sentences": ["今天是三月二号。", "明天星期几？", "我们去学校看书。", "你几月去中国？"], "dialogues": [{"p": "今天几号？", "r": "今天2号。"}]},
+    "u8": {"title": "U8: Shopping", "sentences": ["你想喝什么？", "我想喝茶。", "这个杯子多少钱？", "那个杯子十八块。"], "dialogues": [{"p": "你想吃什么？", "r": "我想吃米饭。"}]},
+    "u9": {"title": "U9: Work/Location", "sentences": ["我在吃饭。", "你儿子在哪儿工作？", "小猫在椅子下面。", "这儿有大医院吗？"], "dialogues": [{"p": "你在做什么？", "r": "我在看书。"}]},
+    "u10": {"title": "U10: Existence", "sentences": ["桌子上有一个电脑和两本汉语书。", "我能坐在这儿吗？", "椅子下面的书是谁的？", "在买书的那个（人）是我女儿。"], "dialogues": [{"p": "椅子下面的书是谁的？", "r": "是我的。"}]},
+    "u11": {"title": "U11: Time", "sentences": ["现在十点十分。", "妈妈，我们什么时候去看电影？", "我想去北京住三天。"], "dialogues": [{"p": "现在几点？", "r": "现在三点。"}]},
+    "u12": {"title": "U12: Weather", "sentences": ["明天会下雨吗？", "今天天气太热了。", "多喝热水，多吃水果。"], "dialogues": [{"p": "今天天气怎么样？", "r": "太冷了。"}]},
+    "u13": {"title": "U13: Calling", "sentences": ["他在打电话呢。", "我也喜欢看电视。", "我们下午去买些水果吧。"], "dialogues": [{"p": "你在做什么呢？", "r": "我在学习。"}]},
+    "u14": {"title": "U14: Things (了)", "sentences": ["她买了不少东西。", "我看见李先生了。", "这件衣服很漂亮。"], "dialogues": [{"p": "你买什么了？", "r": "我买了点儿水果。"}]},
+    "u15": {"title": "U15: Emphasis (是...的)", "sentences": ["我们是两年前认识的。", "我是坐飞机回来的。", "听说你认识王先生。"], "dialogues": [{"p": "你们是怎么认识的？", "r": "我们是大学同学。"}]}
+}
+
+SCENARIO_DB = {
+    "Coffee Shop": {"goal": "Order a tea and pay.", "intro": "You are at a cafe. Ask for tea and price.", "unit": "u8"},
+    "Hospital": {"goal": "Find Dr. Zhang's son.", "intro": "Ask if Dr. Zhang's son works here.", "unit": "u9"},
+    "University": {"goal": "Talk about where you met.", "intro": "Tell a friend you met at university.", "unit": "u15"},
+    "Phone Call": {"goal": "Tell a friend what you are doing.", "intro": "Friend calls you. Answer them.", "unit": "u13"},
+    "Weather Call": {"goal": "Check on parents' health.", "intro": "Ask how the weather is and their health.", "unit": "u12"}
 }
 
 # ==========================================
-# 2. 鹰架引导逻辑模块 (Scaffolding Logic)
+# 2. 界面增强与工具函数
 # ==========================================
-def apply_scaffolding(user_input, target):
-    # 1. '几' + 量词检查
-    if "几" in user_input:
-        mws = ["个", "口", "只", "本", "岁", "块"]
-        parts = user_input.split("几")
-        if len(parts) > 1:
-            after_ji = parts[1][:2]
-            if not any(mw in after_ji for mw in mws):
-                return False, "⚠️ 提醒：使用'几'询问数量时，不要忘记使用量词（如：个、只、口等）！"
-    
-    # 2. '的' 的位置检查 (位置修饰语前置原则)
-    # 逻辑：如果目标句包含位置词且包含'的'，检查名词是否在'的'后面
-    pos_indicators = ["上", "下", "前", "后", "里"]
-    if any(p in target for p in pos_indicators) and "的" in target:
-        key_nouns = ["书", "水果", "猫", "狗", "电脑", "衣服"]
-        for noun in key_nouns:
-            if noun in user_input and "的" in user_input:
-                if user_input.find(noun) < user_input.find("的"):
-                    return False, "⚠️ 注意句序：中文的描述语（位置/所属）必须放在名词前面。公式：[位置] + 的 + [名词]。"
-    
-    return True, ""
+def inject_custom_css():
+    st.markdown("""
+    <style>
+    .stButton>button { width: 100%; border-radius: 10px; height: 3em; font-weight: bold; }
+    .landing-card { padding: 20px; border-radius: 15px; background-color: #f0f2f6; text-align: center; height: 250px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+def clean_audio_tags(text):
+    return re.sub(r'<audio[^>]*>.*?</audio>', '', text)
 
 # ==========================================
-# 3. Streamlit 页面逻辑
+# 3. 核心功能逻辑
 # ==========================================
 def main():
+    inject_custom_css()
     try:
-        st.set_page_config(page_title="HSK 1 Tutor", layout="centered")
-        st.title("🎓 HSK 1 Web Version - PREDC1")
-
-        if 'unit' not in st.session_state: st.session_state.unit = "u1"
-        if 'count' not in st.session_state: st.session_state.count = 0
-        if 'mode' not in st.session_state: st.session_state.mode = "translation"
-
-        # 侧边栏导航
-        st.session_state.unit = st.sidebar.selectbox(
-            "选择单元", 
-            list(KNOWLEDGE_BASE.keys()), 
-            format_func=lambda x: f"{x.upper()}: {KNOWLEDGE_BASE[x]['title']}"
-        )
+        # --- 顶部：语言选择 (右上角) ---
+        col_title, col_lang = st.columns([8, 2])
+        with col_lang:
+            ui_lang = st.selectbox("🌐 Language", ["English", "Español", "中文"], label_visibility="collapsed")
         
-        unit_data = KNOWLEDGE_BASE[st.session_state.unit]
+        # UI 文字映射
+        ui_text = {
+            "English": {"home": "Home", "tutor": "Academic Master", "pal": "Fluent Pal", "quest": "Immersive Quests"},
+            "Español": {"home": "Inicio", "tutor": "Maestro Académico", "pal": "Compañero Fluido", "quest": "Misiones Inmersivas"}
+        }.get(ui_lang, {"home": "Home", "tutor": "Academic Master", "pal": "Fluent Pal", "quest": "Immersive Quests"})
 
-        if st.session_state.mode == "translation":
-            # 翻译环节
-            sentences = unit_data['sentences']
-            current_idx = st.session_state.count % len(sentences)
-            target = sentences[current_idx]
+        # 初始化状态
+        if 'page' not in st.session_state: st.session_state.page = "Landing"
+        if 'messages' not in st.session_state: st.session_state.messages = []
+        if 'hsk_level' not in st.session_state: st.session_state.hsk_level = "HSK 1"
 
-            st.write(f"### 翻译挑战 ({st.session_state.count + 1} / 10)")
-            st.info(f"目标句: {target}") # 实际应用中此处显示西语
+        # --- LANDING 页面 ---
+        if st.session_state.page == "Landing":
+            st.title("🎓 AI Chinese Speaking")
+            st.write("### Welcome, select your learning path:")
             
-            user_input = st.text_input("请输入中文翻译:", key=f"ti_{st.session_state.count}")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(f"<div class='landing-card'><h3>👨‍🏫 {ui_text['tutor']}</h3><p>Systematic learning & strict corrections.</p></div>", unsafe_allow_html=True)
+                if st.button("Enter Tutor Mode"): 
+                    st.session_state.page = "Master"
+                    st.rerun()
+            with c2:
+                st.markdown(f"<div class='landing-card'><h3>🤝 {ui_text['pal']}</h3><p>Zero-pressure chat with AI partner.</p></div>", unsafe_allow_html=True)
+                if st.button("Enter Pal Mode"): 
+                    st.session_state.page = "Pal"
+                    st.rerun()
+            with c3:
+                st.markdown(f"<div class='landing-card'><h3>🗺️ {ui_text['quest']}</h3><p>Real-life missions and scenarios.</p></div>", unsafe_allow_html=True)
+                if st.button("Enter Quest Mode"): 
+                    st.session_state.page = "Quest"
+                    st.rerun()
 
-            if st.button("检查答案"):
-                if not user_input:
-                    st.warning("请输入内容。")
+        # --- A. MASTER 模式 (Academic Master) ---
+        elif st.session_state.page == "Master":
+            st.sidebar.button("⬅️ " + ui_text["home"], on_click=lambda: st.session_state.update({"page": "Landing"}))
+            st.sidebar.title(ui_text["tutor"])
+            
+            level = st.sidebar.radio("Level", ["HSK 1", "HSK 2-6 (Soon)"])
+            unit_key = st.sidebar.selectbox("Unit", list(KNOWLEDGE_BASE.keys()), format_func=lambda x: KNOWLEDGE_BASE[x]['title'])
+            
+            st.title(f"Mastering {KNOWLEDGE_BASE[unit_key]['title']}")
+            
+            # 翻译逻辑
+            target = KNOWLEDGE_BASE[unit_key]['sentences'][0] # 示例取第一句
+            st.write(f"**Translate to Chinese:** {target}")
+            ans = st.text_input("Input:", key="master_in")
+            
+            if st.button("Check"):
+                # 鹰架拦截：几 + 量词
+                if "几" in ans and not any(mw in ans for mw in ["个", "口", "只", "本", "岁", "块"]):
+                    st.warning("⚠️ Teacher: Don't forget the Measure Word after '几'!")
                     return
+                # 鹰架拦截：的 位置
+                if "的" in target and ans.find("的") > ans.find("书") if "书" in ans else False:
+                    st.warning("⚠️ Teacher: The description goes BEFORE '的'.")
+                    return
+                
+                if ans == target: st.success("Perfect! Correct.")
+                else: st.error(f"Try again. Standard: {target}")
 
-                # 应用鹰架拦截
-                passed, message = apply_scaffolding(user_input, target)
-                if not passed:
-                    st.error(message)
-                else:
-                    if user_input.strip() == target:
-                        st.success("✅ 完全正确！")
-                        st.session_state.count += 1
-                        if st.session_state.count >= 10:
-                            st.session_state.mode = "dialogue"
-                        st.rerun()
-                    else:
-                        st.error(f"❌ 不太对。课件标准答案是: {target}")
-
-        else:
-            # 对话环节
-            st.balloons()
-            st.write("### 🎉 翻译过关！进入情景对话")
-            pair = random.choice(unit_data['dialogues'])
-            st.subheader(f"AI: {pair['p']}")
-            st.text_input("你的回应:", key="dia_input")
+        # --- B. PAL 模式 (Fluent Pal) ---
+        elif st.session_state.page == "Pal":
+            st.sidebar.button("⬅️ " + ui_text["home"], on_click=lambda: st.session_state.update({"page": "Landing"}))
+            st.sidebar.title(ui_text["pal"])
+            st.sidebar.info("Difficulty: Adaptive 🧠")
             
-            if st.button("完成本单元并重置"):
-                st.session_state.count = 0
-                st.session_state.mode = "translation"
+            st.title("Zero-Pressure Chat")
+            st.write("*Your AI friend is waiting for you to start talking!*")
+            
+            # 模拟对话历史展示
+            for msg in st.session_state.messages:
+                with st.chat_message(msg["role"]): st.write(msg["content"])
+            
+            chat_in = st.chat_input("Say something to your friend...")
+            if chat_in:
+                st.session_state.messages.append({"role": "user", "content": chat_in})
+                # AI 回复逻辑：包含主动引导
+                ai_res = "你今天怎么样？想去学校还是去商店？" if "你好" in chat_in else "太棒了！我也很喜欢。"
+                st.session_state.messages.append({"role": "assistant", "content": ai_res})
                 st.rerun()
+
+        # --- C. QUEST 模式 (Immersive Quests) ---
+        elif st.session_state.page == "Quest":
+            st.sidebar.button("⬅️ " + ui_text["home"], on_click=lambda: st.session_state.update({"page": "Landing"}))
+            st.sidebar.title(ui_text["quest"])
+            
+            st.title("Immersive Scenario Quests")
+            st.write("Pick a mission and use what you've learned!")
+            
+            # 平铺展示卡片
+            cols = st.columns(2)
+            for i, (name, data) in enumerate(SCENARIO_DB.items()):
+                with cols[i % 2]:
+                    with st.expander(f"📍 {name}"):
+                        st.write(f"**Goal:** {data['goal']}")
+                        st.write(f"_{data['intro']}_")
+                        if st.button(f"Start Mission: {name}", key=f"btn_{name}"):
+                            st.info(f"AI (Waiter/Doctor): 您好！你想做些什么？")
 
     except Exception as e:
         st.error(f"Error: {e}")
