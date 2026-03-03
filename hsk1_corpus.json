@@ -1,6 +1,10 @@
 {
   "u1": {
     "title": "Unit 1",
+    "grammar": {
+      "en": "- Basic Greetings\n- Personal Pronouns (我, 你, 他, 她)",
+      "es": "- Saludos básicos\n- Pronombres personales (我, 你, 他, 她)"
+    },
     "sentences": [
       {"zh": "你好！", "en": "Hello!", "es": "¡Hola!"},
       {"zh": "您好！", "en": "Hello (polite)!", "es": "¡Hola (formal)!"},
@@ -11,6 +15,10 @@
   },
   "u2": {
     "title": "Unit 2",
+    "grammar": {
+      "en": "- Expressing Gratitude (谢谢, 不客气)\n- Expressing Apologies (对不起, 没关系)",
+      "es": "- Expresar gratitud (谢谢, 不客气)\n- Expresar disculpas (对不起, 没关系)"
+    },
     "sentences": [
       {"zh": "谢谢！", "en": "Thank you!", "es": "¡Gracias!"},
       {"zh": "不客气。", "en": "You're welcome.", "es": "De nada."},
@@ -22,6 +30,10 @@
   },
   "u3": {
     "title": "Unit 3",
+    "grammar": {
+      "en": "- The verb 'to be' (是 / 不是)\n- Yes/No Questions with '吗'\n- Asking names (叫什么名字)",
+      "es": "- El verbo ser/estar (是 / 不是)\n- Preguntas de sí/no con '吗'\n- Preguntar nombres (叫什么名字)"
+    },
     "sentences": [
       {"zh": "我是老师。", "en": "I am a teacher.", "es": "Soy profesor/a."},
       {"zh": "你们是学生。", "en": "You are students.", "es": "Vosotros sois estudiantes."},
@@ -40,6 +52,10 @@
   },
   "u4": {
     "title": "Unit 4",
+    "grammar": {
+      "en": "- Possessive particle '的'\n- Question word '谁' (Who)\n- Question word '哪' (Which country)",
+      "es": "- Partícula posesiva '的'\n- Pronombre interrogativo '谁' (Quién)\n- Pronombre interrogativo '哪' (Qué país)"
+    },
     "sentences": [
       {"zh": "我的老师。", "en": "My teacher.", "es": "Mi profesor/a."},
       {"zh": "你的同学。", "en": "Your classmate.", "es": "Tu compañero/a de clase."},
@@ -72,6 +88,10 @@
   },
   "u5": {
     "title": "Unit 5",
+    "grammar": {
+      "en": "- Question word '几' (How many)\n- Classifiers (个, 口, 只)\n- Asking age (多大, 几岁)",
+      "es": "- Pronombre interrogativo '几' (Cuántos)\n- Clasificadores (个, 口, 只)\n- Preguntar la edad (多大, 几岁)"
+    },
     "sentences": [
       {"zh": "一只狗。", "en": "One dog.", "es": "Un perro."},
       {"zh": "三只猫。", "en": "Three cats.", "es": "Tres gatos."},
@@ -106,6 +126,10 @@
   },
   "u6": {
     "title": "Unit 6",
+    "grammar": {
+      "en": "- Modal verb '会' (Can/Know how to)\n- Question word '怎么' (How)\n- Adjective predicates with '很'",
+      "es": "- Verbo modal '会' (Saber/Poder hacer algo)\n- Pronombre interrogativo '怎么' (Cómo)\n- Predicados adjetivales con '很'"
+    },
     "sentences": [
       {"zh": "我妈妈会说汉语。", "en": "My mother can speak Chinese.", "es": "Mi madre sabe hablar chino."},
       {"zh": "我不会写汉字。", "en": "I cannot write Chinese characters.", "es": "No sé escribir caracteres chinos."},
@@ -140,6 +164,10 @@
   },
   "u7": {
     "title": "Unit 7",
+    "grammar": {
+      "en": "- Dates (月, 号/日)\n- Days of the week (星期)\n- Time words as adverbials",
+      "es": "- Fechas (月, 号/日)\n- Días de la semana (星期)\n- Palabras de tiempo como adverbios"
+    },
     "sentences": [
       {"zh": "一月四号。", "en": "January 4th.", "es": "4 de enero."},
       {"zh": "八月十五号。", "en": "August 15th.", "es": "15 de agosto."},
@@ -167,6 +195,10 @@
   },
   "u8": {
     "title": "Unit 8",
+    "grammar": {
+      "en": "- Modal verb '想' (Want to)\n- Asking price (多少钱)\n- Currency unit (块)",
+      "es": "- Verbo modal '想' (Querer)\n- Preguntar el precio (多少钱)\n- Unidad monetaria (块)"
+    },
     "sentences": [
       {"zh": "你想喝什么？", "en": "What do you want to drink?", "es": "¿Qué quieres beber?"},
       {"zh": "我想喝茶。", "en": "I want to drink tea.", "es": "Quiero beber té."},
@@ -190,6 +222,10 @@
   },
   "u9": {
     "title": "Unit 9",
+    "grammar": {
+      "en": "- Verb '在' (To be at/in/on)\n- Question word '哪儿' (Where)\n- Present continuous (在...呢)",
+      "es": "- Verbo '在' (Estar en)\n- Pronombre interrogativo '哪儿' (Dónde)\n- Presente continuo (在...呢)"
+    },
     "sentences": [
       {"zh": "我在吃饭。", "en": "I am eating.", "es": "Estoy comiendo."},
       {"zh": "你在做什么？", "en": "What are you doing?", "es": "¿Qué estás haciendo?"},
@@ -216,6 +252,10 @@
   },
   "u10": {
     "title": "Unit 10",
+    "grammar": {
+      "en": "- Existential sentences with '有'\n- Location words (上, 下, 前, 后, 里)\n- Preposition '在'",
+      "es": "- Oraciones existenciales con '有'\n- Palabras de ubicación (上, 下, 前, 后, 里)\n- Preposición '在'"
+    },
     "sentences": [
       {"zh": "桌子上有一个电脑和两本汉语书。", "en": "There is a computer and two Chinese books on the desk.", "es": "Hay un ordenador y dos libros de chino sobre la mesa."},
       {"zh": "我能坐在这儿吗？", "en": "Can I sit here?", "es": "¿Puedo sentarme aquí?"},
@@ -236,6 +276,10 @@
   },
   "u11": {
     "title": "Unit 11",
+    "grammar": {
+      "en": "- Telling time (点, 分)\n- Position of time words in sentences\n- Before a time/action (前)",
+      "es": "- Decir la hora (点, 分)\n- Posición de las palabras de tiempo en las oraciones\n- Antes de un tiempo/acción (前)"
+    },
     "sentences": [
       {"zh": "现在几点？", "en": "What time is it now?", "es": "¿Qué hora es ahora?"},
       {"zh": "现在十点十分。", "en": "It is 10:10 now.", "es": "Son las diez y diez ahora."},
@@ -257,6 +301,10 @@
   },
   "u12": {
     "title": "Unit 12",
+    "grammar": {
+      "en": "- Question word '怎么样' (How is it)\n- Exclamations with '太...了'\n- Modal verb '会' (Will/Possibility)",
+      "es": "- Pronombre interrogativo '怎么样' (Qué tal/Cómo es)\n- Exclamaciones con '太...了'\n- Verbo modal '会' (Indica posibilidad/futuro)"
+    },
     "sentences": [
       {"zh": "你爸妈的身体怎么样？", "en": "How is your parents' health?", "es": "¿Cómo está la salud de tus padres?"},
       {"zh": "北京的天气怎么样？", "en": "How is the weather in Beijing?", "es": "¿Qué tal el clima en Pekín?"},
@@ -277,6 +325,10 @@
   },
   "u13": {
     "title": "Unit 13",
+    "grammar": {
+      "en": "- Verb '喜欢' (To like)\n- Adverb '也' (Also/Too)\n- Suggestion particle '吧'",
+      "es": "- Verbo '喜欢' (Gustar)\n- Adverbio '也' (También)\n- Partícula de sugerencia '吧'"
+    },
     "sentences": [
       {"zh": "我喜欢看电视。", "en": "I like watching TV.", "es": "Me gusta ver la televisión."},
       {"zh": "我喜欢在家看电视。", "en": "I like watching TV at home.", "es": "Me gusta ver la televisión en casa."},
@@ -297,6 +349,10 @@
   },
   "u14": {
     "title": "Unit 14",
+    "grammar": {
+      "en": "- Particle '了' for completed actions\n- Number + measure word as object\n- After a time/action (后)",
+      "es": "- Partícula '了' para acciones completadas\n- Número + clasificador como objeto\n- Después de un tiempo/acción (后)"
+    },
     "sentences": [
       {"zh": "我们今天七点三十分去她家。", "en": "We are going to her house at 7:30 today.", "es": "Hoy a las siete y media vamos a su casa."},
       {"zh": "我今天想学二十分钟汉语。", "en": "I want to study Chinese for 20 minutes today.", "es": "Hoy quiero estudiar chino durante veinte minutos."},
@@ -316,6 +372,10 @@
   },
   "u15": {
     "title": "Unit 15",
+    "grammar": {
+      "en": "- The '是...的' structure for emphasis\n- Taking transportation (坐火车/飞机)\n- Verbs '认识' and '听说'",
+      "es": "- Estructura '是...的' para dar énfasis\n- Uso de medios de transporte (坐火车/飞机)\n- Verbos '认识' (Conocer) y '听说' (Oír decir)"
+    },
     "sentences": [
       {"zh": "听说你认识王先生。", "en": "I heard you know Mr. Wang.", "es": "He oído que conoces al señor Wang."},
       {"zh": "我听说你是张医生的儿子。", "en": "I heard you are Dr. Zhang's son.", "es": "He oído que eres el hijo del doctor Zhang."},
