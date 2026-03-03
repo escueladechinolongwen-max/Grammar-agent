@@ -28,7 +28,6 @@ def load_knowledge_base():
 
 KNOWLEDGE_BASE = load_knowledge_base()
 
-# 场景实战库
 SCENARIO_DB = {
     "☕ Cafe Order": {"goal_en": "Order a drink.", "goal_es": "Pide una bebida.", "prompt": "咖啡馆服务员，第一句：你好，想喝点什么？", "ai_start_zh": "你好，想喝点什么？"},
     "🏥 At Hospital": {"goal_en": "Find Dr. Zhang.", "goal_es": "Encuentra al Dr. Zhang.", "prompt": "医院前台，第一句：你好，请问你找谁？", "ai_start_zh": "你好，请问你找谁？"},
@@ -69,9 +68,10 @@ UI_TEXT = {
 }
 
 # ==========================================
-# 2. 🔑 大模型 API 接入点
+# 2. 🔑 大模型 API 接入点 (万能钥匙版)
 # ==========================================
-API_KEY = os.environ.get("GEMINI_API_KEY")
+# 自动匹配你在 Render 设置的 GOOGLE_API_KEY 或 GEMINI_API_KEY，都不行就用硬编码兜底
+API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "AIzaSyADkYbH7ZIH2I09-oguQFtyLmqs8nOxqrs"
 
 def transcribe_audio_to_text(audio_bytes):
     if not API_KEY: return "API Key Error"
@@ -181,7 +181,6 @@ def main():
         with c2:
             if st.button(T["m2"], use_container_width=True):
                 st.session_state.current_view = "pal"
-                # 动态判断语言，外语破冰 + 简单中文语音打招呼
                 if lang_key == "es":
                     welcome_pal = f"👋 ¡Hola! Soy tu compañero de práctica, {DRAGON_PAL}.\n\n¿De qué te gustaría hablar hoy? Podemos charlar de forma relajada, ¡sin presiones!\n\n**小龙人:** 你好！今天想聊点什么？<audio>你好！我是小龙人。今天想聊点什么？</audio>"
                 else:
