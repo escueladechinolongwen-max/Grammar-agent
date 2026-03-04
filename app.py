@@ -44,7 +44,7 @@ UI_TEXT = {
         "input_placeholder": "Escribe o usa el micrófono...",
         "correct": "✨ ¡Excelente! Puntería perfecta.", 
         "incorrect": "⚠️ Incorrecto. La expresión estándar es:",
-        "finish_msg": "🏆 ¡Felicidades! Has completado la traducción. ¡Ahora pasemos al desafío de conversación (5 preguntas)!",
+        "finish_msg": "🏆 ¡Felicidades! Has completado la traducción. ¡Ahora pasemos al desafío de conversación!",
         "transcribing": "Transcribiendo audio...",
         "analyzing": "Analizando...",
         "progress": "Progreso",
@@ -58,7 +58,7 @@ UI_TEXT = {
         "input_placeholder": "Type or use the mic...",
         "correct": "✨ Perfect! You nailed it.", 
         "incorrect": "⚠️ Incorrect. The standard expression is:",
-        "finish_msg": "🏆 Congratulations! You've finished the translations. Let's move to the Conversation Challenge (5 questions)!",
+        "finish_msg": "🏆 Congratulations! You've finished the translations. Let's move to the Conversation Challenge!",
         "transcribing": "Transcribing audio...",
         "analyzing": "Analyzing...",
         "progress": "Progress",
@@ -68,9 +68,8 @@ UI_TEXT = {
 }
 
 # ==========================================
-# 2. 🔑 大模型 API 接入点 (万能钥匙版)
+# 2. 🔑 大模型 API 接入点
 # ==========================================
-# 自动匹配你在 Render 设置的 GOOGLE_API_KEY 或 GEMINI_API_KEY，都不行就用硬编码兜底
 API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "AIzaSyADkYbH7ZIH2I09-oguQFtyLmqs8nOxqrs"
 
 def transcribe_audio_to_text(audio_bytes):
@@ -175,8 +174,6 @@ def main():
                 st.session_state.current_view = "master"
                 st.session_state.messages = []
                 st.session_state.current_unit = None 
-                st.session_state.master_idx = 0
-                st.session_state.master_mode = "training"
                 st.rerun()
         with c2:
             if st.button(T["m2"], use_container_width=True):
@@ -204,13 +201,23 @@ def main():
         unit = st.sidebar.selectbox("Unit", list(KNOWLEDGE_BASE.keys()), format_func=lambda x: KNOWLEDGE_BASE[x]["title"])
         st.header(f"{DRAGON_MASTER} - {KNOWLEDGE_BASE[unit]['title']}")
         
-        sentences = KNOWLEDGE_BASE[unit]["sentences"]
-        total_q = len(sentences)
-        
+        # 初始化单元抽样逻辑
         if 'current_unit' not in st.session_state or st.session_state.current_unit != unit:
             st.session_state.current_unit = unit
             st.session_state.master_idx = 0
             st.session_state.master_mode = "training"
+            st.session_state.failed_current = False
+            
+            # 提取并均匀抽样最多10题
+            all_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
+            sample_size = min(10, len(all_sentences))
+            if sample_size > 0:
+                step = max(1, len(all_sentences) // sample_size)
+                sampled = [all_sentences[i] for i in range(0, len(all_sentences), step)][:sample_size]
+            else:
+                sampled = []
+            st.session_state.active_questions = sampled
+            
             grammar_data = KNOWLEDGE_BASE[unit].get("grammar", {})
             grammar_points = grammar_data.get(lang_key, "- Core grammar\n- Basic sentence structures")
             
@@ -219,6 +226,10 @@ def main():
             else:
                 welcome_msg = f"👋 **Hello, I'm your grammar tutor, {DRAGON_MASTER}.**\n\nLet's review the grammar for this unit:\n\n{grammar_points}\n\n**Let's get started!**"
             st.session_state.messages = [{"role": "assistant", "content": welcome_msg, "audio": None}]
+        
+        # 当前队列题目数
+        sentences = st.session_state.active_questions
+        total_q = len(sentences)
         
         # === 阶段 1：翻译特训 (Answer-First Substitution) ===
         if st.session_state.master_mode == "training":
@@ -234,7 +245,7 @@ def main():
                 st.rerun()
             
             target_zh = sentences[current_q]["zh"]
-            display_foreign = sentences[current_q][lang_key]
+            display_foreign = sentences[current_q].get(lang_key, sentences[current_q].get("en", "Translate this"))
             st.info(f"**{T['translate_prompt']}** {display_foreign}")
             
             for msg in st.session_state.messages:
@@ -260,38 +271,58 @@ def main():
                     user_text_clean = clean_punctuation(user_input_text)
 
                 passed, scaffold_msg = apply_scaffolding(user_text_clean, target_zh, T)
+                
                 if not passed:
+                    st.session_state.failed_current = True
                     st.session_state.messages.append({"role": "assistant", "content": scaffold_msg, "audio": None})
                 else:
                     if user_text_clean == clean_punctuation(target_zh):
                         correct_response = f"{T['correct']} <audio>{target_zh}</audio>"
                         txt, audio = asyncio.run(handle_audio_logic(correct_response))
                         st.session_state.messages.append({"role": "assistant", "content": txt, "audio": audio})
+                        
+                        # 【核心逻辑变更】：从本地题库直接抽取未做过的题进行巩固，抛弃大模型生成
+                        if getattr(st.session_state, 'failed_current', False):
+                            all_unit_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
+                            active_zhs = [q["zh"] for q in st.session_state.active_questions]
+                            remaining_pool = [q for q in all_unit_sentences if q["zh"] not in active_zhs]
+                            
+                            if remaining_pool:
+                                consolidation_qs = remaining_pool[:2] # 挑2道没做过的
+                                for q in reversed(consolidation_qs):
+                                    st.session_state.active_questions.insert(st.session_state.master_idx + 1, q)
+                                consol_msg = "💡 **大龙人:** 刚才这道题卡了一下，我们趁热打铁，从题库里再抽两道题巩固一下！" if lang_key == 'es' else "💡 **DA LONGREN:** Let's consolidate with more questions from our boutique pool!"
+                                st.session_state.messages.append({"role": "assistant", "content": consol_msg, "audio": None})
+                        
                         st.session_state.master_idx += 1 
+                        st.session_state.failed_current = False
                         st.session_state.messages.append({"role": "assistant", "content": "🎯 **Next Challenge / Siguiente Reto:**", "audio": None})
                     else:
+                        st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, a strict but patient HSK 1 grammar tutor.
                             The student is trying to translate: "{display_foreign}" into Chinese. 
-                            The exact target answer from the HSK 1 knowledge base is: "{target_zh}".
+                            The exact target answer from the knowledge base is: "{target_zh}".
                             
                             CRITICAL RULES FOR SCAFFOLDING:
                             1. NEVER give them the full target sentence "{target_zh}" directly.
                             2. Speak entirely in {ui_lang}, but use Simplified Chinese for target words. Use **bold** to highlight Chinese keywords.
-                            3. The "Answer-First Substitution" Method: If the student uses English/Spanish word order for questions (e.g., starting with "Where", "What", "How many"), STOP THEM. 
-                               - Step A: Ask them to translate a declarative answer first (e.g., if target is 'Where are you from?', ask 'How do you say: I am from China?').
+                            3. The "Answer-First Substitution" Method: If the student uses English/Spanish word order for questions, STOP THEM. 
+                               - Step A: Ask them to translate a declarative answer first.
                                - Step B: Once they answer that correctly, ask them to identify the keyword in Chinese.
-                               - Step C: Then ask how to say the question word (e.g., 'which country' -> **哪国**, 'how many' -> **几**).
-                               - Step D: Guide them to replace ONLY the keyword with the question word, keeping the exact same word order.
-                            4. If they miss measure words or drop verbs, gently point it out and ask them to fix it.
-                            5. Ask ONE question or give ONE instruction at a time. Wait for their reply.
+                               - Step C: Ask how to say the question word.
+                               - Step D: Guide them to replace ONLY the keyword with the question word.
+                            4. If they use Arabic numerals (e.g., '1', '4') instead of Chinese characters (e.g., '一', '四'), explicitly tell them: "Please use Chinese characters for numbers, not Arabic numerals."
+                            5. ABSOLUTELY NO EXTRA QUESTIONS. Do NOT invent your own examples. Your ONLY goal is to guide them until they type the EXACT sentence: "{target_zh}".
+                            6. If the student understood the grammar but hasn't typed the full exact sentence, instruct them: "Now, please type the full Chinese sentence so we can move on."
+                            7. Ask ONE question or give ONE instruction at a time. Wait for their reply.
                             """
                             ai_feedback = get_ai_response(st.session_state.messages, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
                 st.rerun()
 
-        # === 阶段 2：智能问答池 (基于 Knowledge Base) ===
+        # === 阶段 2：智能问答池 ===
         elif st.session_state.master_mode == "dialogue_pool":
             st.success("🔥 **Review Phase Activated! / ¡Fase de Revisión Activada!**")
             pool = KNOWLEDGE_BASE[unit].get("dialogues", [])
@@ -303,15 +334,14 @@ def main():
 
             STRICT VOCABULARY AND CONTENT RULE:
             You must ONLY ask questions from this exact knowledge base pool to ensure you do not use vocabulary outside of HSK 1: {json.dumps(pool, ensure_ascii=False)}. 
-            DO NOT invent your own questions outside of this provided list. 
 
             Strict Teaching Protocol:
-            1. Ask ONE question at a time from the provided pool. DO NOT provide the structure or examples initially. Just wait for the reply.
-            2. If CORRECT on the first try: Praise them in {ui_lang}, output the correct Chinese sentence in an <audio> tag, and pick a new question from the pool.
+            1. Ask ONE question at a time from the pool. Just wait for the reply.
+            2. If CORRECT on the first try: Praise them in {ui_lang}, output the correct Chinese sentence in an <audio> tag, and pick a new question.
             3. If INCORRECT (1st time): Provide the basic grammar structure (scaffold) in {ui_lang} without giving the direct answer. Ask them to try again.
-            4. If INCORRECT (2nd time): Comfort them patiently. Explicitly guide them to observe the structure. Explain that in Chinese, we only replace the target word. Provide a similar example, then ask them to try the original question again.
-            5. Consolidation: If the student gets it right AFTER making mistakes, IMMEDIATELY ask a similar follow-up question (changing only a small detail like a number or day) to consolidate.
-            6. Goal: Complete exactly 5 different questions. When 5 are done, congratulate them.
+            4. If INCORRECT (2nd time): Comfort them patiently. Explicitly guide them to observe the structure and replace the target word.
+            5. Consolidation: If the student gets it right AFTER making mistakes, IMMEDIATELY ask a similar follow-up question (changing only a small detail) to consolidate.
+            6. Goal: Complete exactly 5 different questions.
             """
             
             for msg in st.session_state.messages:
