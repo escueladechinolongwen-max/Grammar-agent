@@ -94,7 +94,6 @@ def get_ai_response(messages_history, system_prompt="", audio_bytes=None):
     gemini_history = []
     
     for msg in messages_history[:-1]:
-        # 过滤掉麦克风提示、系统提示词等非对话内容
         if isinstance(msg["content"], str) and not msg["content"].startswith("🎤") and not msg["content"].startswith("✨") and not msg["content"].startswith("🎯"):
             role = "user" if msg["role"] == "user" else "model"
             gemini_history.append({"role": role, "parts": [msg["content"]]})
@@ -117,7 +116,6 @@ def clean_punctuation(text):
     return re.sub(r'[^\w\s\u4e00-\u9fff]', '', text).strip()
 
 def apply_scaffolding(student_input, target_sentence, lang_dict):
-    # 针对日期和星期的特殊保护，不弹出量词提醒
     if "几" in student_input:
         if any(keyword in student_input for keyword in ["几月", "几号", "星期几"]):
             return True, ""
@@ -165,7 +163,6 @@ def main():
     T = UI_TEXT[ui_lang]
     lang_key = "es" if ui_lang == "Español" else "en"
 
-    # 初始化全局状态
     if 'current_view' not in st.session_state: 
         st.session_state.current_view = "landing"
     if 'messages' not in st.session_state: 
@@ -216,7 +213,6 @@ def main():
         unit = st.sidebar.selectbox("Unit", list(KNOWLEDGE_BASE.keys()), format_func=lambda x: KNOWLEDGE_BASE[x]["title"])
         st.header(f"{DRAGON_MASTER} - {KNOWLEDGE_BASE[unit]['title']}")
         
-        # 初始化单元抽样逻辑（最多10题）
         if 'current_unit' not in st.session_state or st.session_state.current_unit != unit:
             st.session_state.current_unit = unit
             st.session_state.master_idx = 0
@@ -242,15 +238,12 @@ def main():
                 welcome_msg = f"👋 **Hello, I'm your grammar tutor, {DRAGON_MASTER}.**\n\nLet's review the grammar for this unit:\n\n{grammar_points}\n\n**Let's get started!**"
             st.session_state.messages = [{"role": "assistant", "content": welcome_msg, "audio": None}]
         
-        # 当前队列题目数
         questions = st.session_state.active_questions
         total_q = len(questions)
         
-        # === 阶段 1：翻译特训 ===
         if st.session_state.master_mode == "training":
             current_q = st.session_state.master_idx
             
-            # 更新进度条
             st.progress(current_q / total_q if total_q > 0 else 0)
             st.caption(f"{T['progress']}: {current_q}/{total_q}")
             
@@ -299,7 +292,6 @@ def main():
                         txt, aud = asyncio.run(handle_audio_logic(correct_response))
                         st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
                         
-                        # 【核心逻辑】：答错后答对，从题库中抽取两道未做过的题进行惩罚/巩固
                         if getattr(st.session_state, 'failed_current', False):
                             all_unit_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
                             active_zhs = [q["zh"] for q in st.session_state.active_questions]
@@ -318,21 +310,23 @@ def main():
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
-                            # 完美落实“先考后教”的算法级提示词
+                            # 【核心升级：基于诊断的拦截逻辑】
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, a strict HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". Target: "{target_zh}".
                             
-                            CRITICAL ALGORITHM ("Test First, Teach Later"):
-                            Analyze the chat history. Have you already provided a grammar structure for this specific sentence?
+                            CRITICAL ALGORITHM ("Diagnose First, Teach Later"):
+                            1. EVALUATE THE MISTAKE FIRST: Did the student use English/Spanish word order? (e.g., putting question words like 什么, 几, 哪儿 at the very beginning of the sentence, like "什么天是昨天").
                             
-                            - NO (1ST MISTAKE): Provide ONLY the basic grammar structure (scaffold) in {ui_lang}. DO NOT use the Answer-First method yet. DO NOT give the target answer. Ask them to try again. SHUT UP AND WAIT.
+                            2. IF FOREIGN WORD ORDER DETECTED:
+                               - IMMEDIATELY INTERVENE and say (translated naturally to {ui_lang}): "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the answer to this question first, and then build the question on top of that."
+                               - Ask them to provide the declarative answer (e.g., "I am from China" or "Yesterday was August 15th").
+                               - Once they provide it, use the CRITICAL PRECISION RULE: guide them to replace ONLY the exact, single keyword (e.g., "replace 四 with 几"). DO NOT replace chunks.
+                               - SHUT UP AND WAIT.
+                               
+                            3. IF IT IS A NORMAL MISTAKE (1st time): Provide ONLY the basic grammar structure (scaffold) in {ui_lang}. DO NOT use the Answer-First method. Ask them to try again. SHUT UP AND WAIT.
                             
-                            - YES (2ND MISTAKE OR MORE): 
-                               1. Comfort them patiently.
-                               2. Guide them to observe the structure. NOW use the "Answer-First Substitution" method (e.g., ask for the declarative answer first, then guide them to replace the keyword).
-                               3. Provide a similar example sentence.
-                               4. Ask them to try the original sentence again. SHUT UP AND WAIT.
+                            4. IF IT IS A NORMAL MISTAKE (2nd time+): Comfort them. Provide a similar example sentence. Guide them to observe the structure. Ask them to try again. SHUT UP AND WAIT.
                             
                             GENERAL RULES:
                             - NEVER give the full target sentence directly.
@@ -349,20 +343,30 @@ def main():
             st.success("🔥 **Review Phase Activated! / ¡Fase de Revisión Activada!**")
             pool = KNOWLEDGE_BASE[unit].get("dialogues", [])
             
-            # 同样落实“先考后教”的对话算法
+            # 【问答池同样执行诊断拦截逻辑】
             da_longren_dialogue_prompt = f"""
             You are {DRAGON_MASTER} in the 'Dialogue & Review' phase. 
             Output <audio> tags ONLY when the student's answer is perfectly correct.
             
             STRICT RULE: ONLY ask questions from this pool: {json.dumps(pool, ensure_ascii=False)}. Do NOT invent new questions.
             
-            CRITICAL ALGORITHM ("Test First, Teach Later"):
+            CRITICAL ALGORITHM ("Diagnose First, Teach Later"):
             1. NEVER PREEMPT: Ask ONE question from the pool. DO NOT provide structure or hints before they answer. SHUT UP AND WAIT.
+            
             2. IF CORRECT: Praise in {ui_lang}, output the correct Chinese sentence in an <audio> tag, and pick a new question from the pool.
-            3. IF 1ST MISTAKE: Provide ONLY the basic grammar structure (scaffold) in {ui_lang} without giving the direct answer. Ask them to try again. SHUT UP AND WAIT.
-            4. IF 2ND MISTAKE OR MORE: Comfort them patiently. Guide them to observe the structure (e.g., "replace the keyword"). Provide a similar example, then ask them to try the original question again. SHUT UP AND WAIT.
-            5. CONSOLIDATION REWARD: If the student gets it right AFTER making mistakes, IMMEDIATELY ask a similar follow-up question (same structure, different keyword) to consolidate muscle memory!
-            6. Stop after exactly 5 base questions.
+            
+            3. IF FOREIGN WORD ORDER DETECTED (e.g., question word at the beginning):
+               - IMMEDIATELY INTERVENE and say (translated naturally to {ui_lang}): "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the answer to this question first."
+               - Ask them to state the declarative answer first.
+               - CRITICAL PRECISION RULE: Tell them to replace the exact, single keyword (e.g., "replace 四 with 几").
+               - SHUT UP AND WAIT.
+               
+            4. IF NORMAL MISTAKE (1st time): Provide ONLY the basic grammar structure (scaffold) in {ui_lang}. Ask them to try again. SHUT UP AND WAIT.
+            
+            5. IF NORMAL MISTAKE (2nd time+): Comfort them patiently. Provide a similar example, then ask them to try the original question again. SHUT UP AND WAIT.
+            
+            6. CONSOLIDATION REWARD: If the student gets it right AFTER making mistakes, IMMEDIATELY ask a similar follow-up question.
+            7. Stop after exactly 5 base questions.
             """
             
             for m in st.session_state.messages:
