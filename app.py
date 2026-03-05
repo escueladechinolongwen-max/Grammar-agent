@@ -4,6 +4,7 @@ import os
 import re
 import asyncio
 import time
+import random
 import google.generativeai as genai
 import edge_tts
 from streamlit_mic_recorder import mic_recorder
@@ -44,7 +45,6 @@ UI_TEXT = {
         "input_placeholder": "Escribe o usa el micrófono...",
         "correct": "✨ ¡Excelente! Puntería perfecta.", 
         "incorrect": "⚠️ Incorrecto. La expresión estándar es:",
-        "finish_msg": "🏆 ¡Felicidades! Has completado la traducción. ¡Ahora pasemos al desafío de conversación!",
         "transcribing": "Transcribiendo audio...",
         "analyzing": "Analizando...",
         "progress": "Progreso",
@@ -58,7 +58,6 @@ UI_TEXT = {
         "input_placeholder": "Type or use the mic...",
         "correct": "✨ Perfect! You nailed it.", 
         "incorrect": "⚠️ Incorrect. The standard expression is:",
-        "finish_msg": "🏆 Congratulations! You've finished the translations. Let's move to the Conversation Challenge!",
         "transcribing": "Transcribing audio...",
         "analyzing": "Analyzing...",
         "progress": "Progress",
@@ -68,7 +67,7 @@ UI_TEXT = {
 }
 
 # ==========================================
-# 2. 🔑 大模型 API 接入点
+# 2. 🔑 大模型 API 接入点 (含防崩溃合并算法)
 # ==========================================
 API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "AIzaSyADkYbH7ZIH2I09-oguQFtyLmqs8nOxqrs"
 
@@ -91,12 +90,23 @@ def get_ai_response(messages_history, system_prompt="", audio_bytes=None):
         return "⚠️ 系统错误：找不到 API Key！请配置 API 密钥。"
     genai.configure(api_key=API_KEY)
     model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=system_prompt)
-    gemini_history = []
     
+    # 极度安全的消息合并机制，防止 API 抛出 400 Alternating History Error
+    gemini_history = []
     for msg in messages_history[:-1]:
-        if isinstance(msg["content"], str) and not msg["content"].startswith("🎤") and not msg["content"].startswith("✨") and not msg["content"].startswith("🎯"):
-            role = "user" if msg["role"] == "user" else "model"
-            gemini_history.append({"role": role, "parts": [msg["content"]]})
+        role = "user" if msg["role"] == "user" else "model"
+        content = msg["content"]
+        # 清理掉带有干扰的音频标签
+        content = re.sub(r'<audio[^>]*>.*?</audio>', '', content)
+        
+        if not gemini_history:
+            gemini_history.append({"role": role, "parts": [content]})
+        else:
+            if gemini_history[-1]["role"] == role:
+                # 合并连续相同身份的消息
+                gemini_history[-1]["parts"][0] += f"\n{content}"
+            else:
+                gemini_history.append({"role": role, "parts": [content]})
             
     try:
         chat = model.start_chat(history=gemini_history)
@@ -139,7 +149,7 @@ async def generate_tts_audio(text, voice_code="zh-CN-XiaoxiaoNeural"):
 
 async def handle_audio_logic(full_response):
     display_text = re.sub(r'</?p>', '', full_response)
-    display_text = re.sub(r'<audio[^>]*>.*?</audio>', '', display_text).replace('</audio>', '')
+    display_text = re.sub(r'<audio[^>]*>.*?</audio>', '', display_text)
     audio_texts = re.findall(r'<audio[^>]*>(.*?)</audio>', full_response, flags=re.DOTALL)
     
     if audio_texts:
@@ -171,10 +181,9 @@ def main():
         st.session_state.master_idx = 0
     if 'master_mode' not in st.session_state: 
         st.session_state.master_mode = "training"
+    if 'qa_correct_count' not in st.session_state:
+        st.session_state.qa_correct_count = 0
 
-    # ------------------------------------------
-    # Landing 主页
-    # ------------------------------------------
     if st.session_state.current_view == "landing":
         st.markdown(f"<h1 style='text-align: center;'>{T['title']}</h1>", unsafe_allow_html=True)
         st.write("") 
@@ -205,9 +214,6 @@ def main():
                 st.session_state.messages = []
                 st.rerun()
 
-    # ------------------------------------------
-    # 模式 1: 👨‍🏫 Maestro Académico
-    # ------------------------------------------
     elif st.session_state.current_view == "master":
         st.sidebar.button("⬅️ Back", on_click=lambda: st.session_state.update({"current_view": "landing"}))
         unit = st.sidebar.selectbox("Unit", list(KNOWLEDGE_BASE.keys()), format_func=lambda x: KNOWLEDGE_BASE[x]["title"])
@@ -218,12 +224,13 @@ def main():
             st.session_state.master_idx = 0
             st.session_state.master_mode = "training"
             st.session_state.failed_current = False
+            st.session_state.qa_correct_count = 0
+            st.session_state.pool_seed = int(time.time()) # 牢牢锁死该单元的随机种子
             
             all_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
             sample_size = min(10, len(all_sentences))
             if sample_size > 0:
-                step = max(1, len(all_sentences) // sample_size)
-                sampled_questions = [all_sentences[i] for i in range(0, len(all_sentences), step)][:sample_size]
+                sampled_questions = random.sample(all_sentences, sample_size)
             else:
                 sampled_questions = []
                 
@@ -232,26 +239,52 @@ def main():
             grammar_data = KNOWLEDGE_BASE[unit].get("grammar", {})
             grammar_points = grammar_data.get(lang_key, "- Core grammar\n- Basic sentence structures")
             
+            # 充满仪式感的开场白宣导
             if lang_key == "es":
-                welcome_msg = f"👋 **Hola, soy tu tutor de gramática, {DRAGON_MASTER}.**\n\nVamos a repasar la gramática de esta unidad:\n\n{grammar_points}\n\n**¡Empecemos!**"
+                welcome_msg = f"👋 **¡Hola! Soy {DRAGON_MASTER}.**\n\nEn esta clase, repasaremos juntos los siguientes puntos gramaticales:\n\n{grammar_points}\n\n**Nuestro plan de entrenamiento:**\n1. Traduciremos juntos algunas oraciones clave.\n2. Si hay un error gramatical, tendremos 1 o 2 oraciones extra para consolidar el punto.\n3. Luego, tendremos unas 5 preguntas de situación.\n\n**¿Estás listo/a para el desafío? (¡Puedes empezar a traducir la oración de arriba directamente!)**"
             else:
-                welcome_msg = f"👋 **Hello, I'm your grammar tutor, {DRAGON_MASTER}.**\n\nLet's review the grammar for this unit:\n\n{grammar_points}\n\n**Let's get started!**"
+                welcome_msg = f"👋 **Hello! I am {DRAGON_MASTER}.**\n\nIn this class, we will review the following grammar points together:\n\n{grammar_points}\n\n**Our training plan:**\n1. We will translate some key sentences together.\n2. If a grammar mistake occurs, we will have 1 to 2 extra sentences to consolidate the point.\n3. Then, we will have about 5 scenario-based questions.\n\n**Are you ready for the challenge? (You can start translating the first sentence above directly!)**"
+            
             st.session_state.messages = [{"role": "assistant", "content": welcome_msg, "audio": None}]
         
         questions = st.session_state.active_questions
         total_q = len(questions)
         
+        # === 阶段 1：翻译特训 ===
         if st.session_state.master_mode == "training":
             current_q = st.session_state.master_idx
             
             st.progress(current_q / total_q if total_q > 0 else 0)
             st.caption(f"{T['progress']}: {current_q}/{total_q}")
             
+            # 【完美无缝转场】：全通关后立刻后台抛出第一道情景题
             if current_q >= total_q:
                 st.session_state.master_mode = "dialogue_pool"
+                st.session_state.qa_correct_count = 0
                 st.balloons()
-                transition_msg = f"✨ {T['finish_msg']}\n\n**{DRAGON_MASTER}:** Are you ready? (Type 'yes' or speak to start!)"
+                
+                if lang_key == "es":
+                    transition_msg = f"🎉 **¡Felicidades por completar el desafío de traducción!**\n\n**{DRAGON_MASTER}:** ¡Ahora pasemos a la sesión de preguntas y respuestas! Te haré unas 5 preguntas basadas en situaciones reales. ¡Aquí vamos!"
+                else:
+                    transition_msg = f"🎉 **Congratulations on completing the translation challenge!**\n\n**{DRAGON_MASTER}:** Now let's move on to the Q&A session! I will ask you about 5 questions based on real-life scenarios. Here we go!"
+                
                 st.session_state.messages.append({"role": "assistant", "content": transition_msg, "audio": None})
+                
+                with st.spinner(T['analyzing']):
+                    pool = KNOWLEDGE_BASE[unit].get("dialogues", [])
+                    if pool:
+                        random.seed(st.session_state.pool_seed)
+                        shuffled_pool = random.sample(pool, min(len(pool), 10))
+                    else:
+                        shuffled_pool = []
+                    
+                    first_q_prompt = f"You are {DRAGON_MASTER}. The translation phase is over. Pick ONE question from this pool {json.dumps(shuffled_pool, ensure_ascii=False)} and ask the student in {ui_lang}. DO NOT provide any hints or greetings. SHUT UP AND WAIT for their answer."
+                    
+                    # 使用隐形指引让 AI 稳定开球，防止把系统的恭喜词当成学生的输入
+                    trigger_messages = st.session_state.messages + [{"role": "user", "content": "Please start the first question of the dialogue phase immediately."}]
+                    raw_ai_reply = get_ai_response(trigger_messages, first_q_prompt, audio_bytes=None)
+                    txt, aud = asyncio.run(handle_audio_logic(raw_ai_reply))
+                    st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
                 st.rerun()
             
             target_zh = questions[current_q]["zh"]
@@ -298,41 +331,38 @@ def main():
                             remaining_pool = [q for q in all_unit_sentences if q["zh"] not in active_zhs]
                             
                             if remaining_pool:
-                                consolidation_qs = remaining_pool[:2] 
+                                consolidation_qs = random.sample(remaining_pool, min(2, len(remaining_pool))) 
                                 for q in reversed(consolidation_qs):
                                     st.session_state.active_questions.insert(st.session_state.master_idx + 1, q)
-                                consol_msg = "💡 **大龙人:** 刚才这道题卡了一下，我们趁热打铁，从题库里再抽两道题巩固一下！" if lang_key == 'es' else "💡 **DA LONGREN:** Let's consolidate with more questions from our boutique pool!"
+                                consol_msg = "💡 **大龙人:** 刚才这道题卡了一下，我们趁热打铁抽两道题巩固一下！(请直接看上方的新挑战)" if lang_key == 'es' else "💡 **DA LONGREN:** Let's consolidate! (Check the new challenge above)"
                                 st.session_state.messages.append({"role": "assistant", "content": consol_msg, "audio": None})
                         
                         st.session_state.master_idx += 1 
                         st.session_state.failed_current = False
-                        st.session_state.messages.append({"role": "assistant", "content": "🎯 **Next Challenge / Siguiente Reto:**", "audio": None})
+                        # 丝滑切换下一题，干掉废话。
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
-                            # 【核心升级：基于诊断的拦截逻辑】
                             da_longren_translation_prompt = f"""
-                            You are {DRAGON_MASTER}, a strict HSK 1 grammar tutor.
-                            The student is translating: "{display_foreign}". Target: "{target_zh}".
+                            You are {DRAGON_MASTER}, a strict HSK 1 grammar tutor acting as a "ruthless sentence scanner".
+                            The student is translating: "{display_foreign}". 
+                            The EXACT TARGET ANSWER required by the system is: "{target_zh}".
+                            
+                            ABSOLUTE BOUNDARIES (DO NOT VIOLATE):
+                            1. DO NOT teach alternative conversational ways. Guide exclusively towards the exact "{target_zh}".
+                            2. DO NOT say goodbye, wrap up, or ask if they have questions. The class is NOT over yet.
+                            3. THE CLOSING LOOP: If they build the parts correctly but haven't put them together, your ONLY instruction is: "Now, please type the full, complete Chinese sentence together in one line."
                             
                             CRITICAL ALGORITHM ("Diagnose First, Teach Later"):
-                            1. EVALUATE THE MISTAKE FIRST: Did the student use English/Spanish word order? (e.g., putting question words like 什么, 几, 哪儿 at the very beginning of the sentence, like "什么天是昨天").
-                            
-                            2. IF FOREIGN WORD ORDER DETECTED:
-                               - IMMEDIATELY INTERVENE and say (translated naturally to {ui_lang}): "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the answer to this question first, and then build the question on top of that."
-                               - Ask them to provide the declarative answer (e.g., "I am from China" or "Yesterday was August 15th").
-                               - Once they provide it, use the CRITICAL PRECISION RULE: guide them to replace ONLY the exact, single keyword (e.g., "replace 四 with 几"). DO NOT replace chunks.
+                            1. IF FOREIGN WORD ORDER DETECTED (e.g., question word at the beginning):
+                               - Say: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the answer to this question first."
+                               - Ask for the declarative answer.
+                               - Once provided, apply CRITICAL PRECISION RULE: Guide replacement of the exact keyword(s). If multiple numbers need replacing, guide them to replace ALL relevant numbers with '几' (e.g., "replace 八 with 几, and 十五 with 几"). 
                                - SHUT UP AND WAIT.
                                
-                            3. IF IT IS A NORMAL MISTAKE (1st time): Provide ONLY the basic grammar structure (scaffold) in {ui_lang}. DO NOT use the Answer-First method. Ask them to try again. SHUT UP AND WAIT.
+                            2. IF NORMAL MISTAKE (1st time): Provide ONLY the basic grammar structure scaffold. Ask to try again. SHUT UP AND WAIT.
                             
-                            4. IF IT IS A NORMAL MISTAKE (2nd time+): Comfort them. Provide a similar example sentence. Guide them to observe the structure. Ask them to try again. SHUT UP AND WAIT.
-                            
-                            GENERAL RULES:
-                            - NEVER give the full target sentence directly.
-                            - Speak in {ui_lang}, use **bold** Simplified Chinese for keywords.
-                            - If they use Arabic numerals, explicitly demand Chinese characters.
-                            - Ask ONE question or give ONE instruction at a time.
+                            3. IF NORMAL MISTAKE (2nd time+): Comfort patiently. Provide a similar example sentence. Guide observation. Ask to try again. SHUT UP AND WAIT.
                             """
                             ai_feedback = get_ai_response(st.session_state.messages, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
@@ -340,33 +370,33 @@ def main():
 
         # === 阶段 2：智能问答池 ===
         elif st.session_state.master_mode == "dialogue_pool":
-            st.success("🔥 **Review Phase Activated! / ¡Fase de Revisión Activada!**")
             pool = KNOWLEDGE_BASE[unit].get("dialogues", [])
-            
-            # 【问答池同样执行诊断拦截逻辑】
+            if pool:
+                random.seed(st.session_state.pool_seed)
+                shuffled_pool = random.sample(pool, min(len(pool), 10))
+            else:
+                shuffled_pool = []
+                
+            # 判断是否满分通关（控制 UI 的文本/语音框上锁状态）
+            is_class_dismissed = st.session_state.get('qa_correct_count', 0) >= 5
+
             da_longren_dialogue_prompt = f"""
             You are {DRAGON_MASTER} in the 'Dialogue & Review' phase. 
             Output <audio> tags ONLY when the student's answer is perfectly correct.
             
-            STRICT RULE: ONLY ask questions from this pool: {json.dumps(pool, ensure_ascii=False)}. Do NOT invent new questions.
+            STRICT RULE: ONLY ask questions from this pool: {json.dumps(shuffled_pool, ensure_ascii=False)}. Pick a different one each time.
             
-            CRITICAL ALGORITHM ("Diagnose First, Teach Later"):
-            1. NEVER PREEMPT: Ask ONE question from the pool. DO NOT provide structure or hints before they answer. SHUT UP AND WAIT.
+            PROGRESS TRACKER: The student has currently answered {st.session_state.get('qa_correct_count', 0)} out of 5 questions correctly.
             
-            2. IF CORRECT: Praise in {ui_lang}, output the correct Chinese sentence in an <audio> tag, and pick a new question from the pool.
-            
-            3. IF FOREIGN WORD ORDER DETECTED (e.g., question word at the beginning):
-               - IMMEDIATELY INTERVENE and say (translated naturally to {ui_lang}): "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the answer to this question first."
-               - Ask them to state the declarative answer first.
-               - CRITICAL PRECISION RULE: Tell them to replace the exact, single keyword (e.g., "replace 四 with 几").
-               - SHUT UP AND WAIT.
-               
-            4. IF NORMAL MISTAKE (1st time): Provide ONLY the basic grammar structure (scaffold) in {ui_lang}. Ask them to try again. SHUT UP AND WAIT.
-            
-            5. IF NORMAL MISTAKE (2nd time+): Comfort them patiently. Provide a similar example, then ask them to try the original question again. SHUT UP AND WAIT.
-            
-            6. CONSOLIDATION REWARD: If the student gets it right AFTER making mistakes, IMMEDIATELY ask a similar follow-up question.
-            7. Stop after exactly 5 base questions.
+            CRITICAL ALGORITHM:
+            1. NEVER PREEMPT: Ask ONE question from the pool. SHUT UP AND WAIT.
+            2. IF CORRECT: 
+               - Praise in {ui_lang}, output the correct Chinese sentence in an <audio> tag.
+               - IF this correct answer brings their total to 5 (meaning they just answered the 5th one correctly), you MUST enthusiastically congratulate them, announce that the class is successfully completed ("恭喜你攻克了所有难关，下课啦！"), and give a warm, emotional farewell. DO NOT ask a 6th question.
+               - IF their total is less than 5, pick a NEW question from the pool.
+            3. IF FOREIGN WORD ORDER: Trigger "Answer-First" -> Ask for declarative answer -> Tell them exactly which word/number to replace with '几' or question word -> SHUT UP AND WAIT.
+            4. IF NORMAL MISTAKE: 1st time scaffold only. 2nd time example and guide.
+            5. CONSOLIDATION REWARD: If right AFTER making mistakes, ask a similar follow-up.
             """
             
             for m in st.session_state.messages:
@@ -377,9 +407,13 @@ def main():
             
             col_input, col_mic = st.columns([9, 1])
             with col_input:
-                user_input = st.chat_input(T['input_placeholder'])
+                user_input = st.chat_input(T['input_placeholder'], disabled=is_class_dismissed)
             with col_mic:
-                audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_pool")
+                if not is_class_dismissed:
+                    audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_pool")
+                else:
+                    audio_input = None
+                    st.success("🎉 Class Dismissed! Perfect Score! / ¡Clase terminada con puntaje perfecto!")
                 
             if user_input or audio_input:
                 if audio_input:
@@ -392,13 +426,15 @@ def main():
                 with st.spinner(T['analyzing']):
                     audio_bytes = audio_input['bytes'] if audio_input else None
                     raw_ai_reply = get_ai_response(st.session_state.messages, da_longren_dialogue_prompt, audio_bytes=audio_bytes)
+                    
+                    # 计分板核心：大模型抛出 <audio> 意味着这题对了
+                    if "<audio>" in raw_ai_reply:
+                        st.session_state.qa_correct_count += 1
+                        
                     txt, aud = asyncio.run(handle_audio_logic(raw_ai_reply))
                     st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
                 st.rerun()
 
-    # ------------------------------------------
-    # 模式 2 & 3: 小龙人语伴与场景实战
-    # ------------------------------------------
     elif st.session_state.current_view in ["pal", "quest"]:
         st.sidebar.button("⬅️ Back", on_click=lambda: st.session_state.update({"current_view": "landing"}))
         st.sidebar.selectbox("HSK Level", ["HSK 1", "HSK 2", "HSK 3"])
@@ -448,9 +484,9 @@ def main():
             if is_quest:
                 system_prompt = SCENARIO_DB[st.session_state.active_quest]["prompt"] + " 每次回复都要在最后加上 <audio>你要发音的中文句子</audio> 标签。"
             else:
-                system_prompt = f"你现在的身份是'{DRAGON_PAL}'，一个热情、幽默的中文语伴。请务必使用简单的 HSK 1 词汇。每次回复都要在最后加上 <audio>你要发音的中文句子</audio> 标签。"
+                system_prompt = f"当前身份是'{DRAGON_PAL}'，一个热情、幽默的中文语伴。请务必使用简单的 HSK 1 词汇。每次回复都要在最后加上 <audio>发音的中文句子</audio> 标签。"
             
-            with st.spinner("AI 正在思考..."):
+            with st.spinner("Analyzing..."):
                 audio_bytes = audio_input['bytes'] if audio_input else None
                 raw_ai_reply = get_ai_response(st.session_state.messages, system_prompt, audio_bytes=audio_bytes)
                 txt, audio = asyncio.run(handle_audio_logic(raw_ai_reply))
