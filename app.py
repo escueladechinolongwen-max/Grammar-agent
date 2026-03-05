@@ -17,7 +17,7 @@ DRAGON_PAL = "🐉 **小龙人 (XIAO LONGREN)**"
 def load_knowledge_base():
     file_path = "hsk1_corpus.json"
     if not os.path.exists(file_path):
-        st.error("Error: hsk1_corpus.json not found.")
+        st.error("Error: hsk1_corpus.json not found. 请确保文件在同目录下。")
         return {}
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -73,7 +73,8 @@ UI_TEXT = {
 API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "AIzaSyADkYbH7ZIH2I09-oguQFtyLmqs8nOxqrs"
 
 def transcribe_audio_to_text(audio_bytes):
-    if not API_KEY: return "API Key Error"
+    if not API_KEY: 
+        return "API Key Error"
     genai.configure(api_key=API_KEY)
     model = genai.GenerativeModel('gemini-2.5-flash')
     try:
@@ -86,16 +87,18 @@ def transcribe_audio_to_text(audio_bytes):
         return ""
 
 def get_ai_response(messages_history, system_prompt="", audio_bytes=None):
-    if not API_KEY: return "⚠️ 系统错误：找不到 API Key！请配置 GEMINI_API_KEY。"
+    if not API_KEY: 
+        return "⚠️ 系统错误：找不到 API Key！请配置 API 密钥。"
     genai.configure(api_key=API_KEY)
     model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=system_prompt)
     gemini_history = []
     
     for msg in messages_history[:-1]:
+        # 过滤掉麦克风提示、系统提示词等非对话内容
         if isinstance(msg["content"], str) and not msg["content"].startswith("🎤") and not msg["content"].startswith("✨") and not msg["content"].startswith("🎯"):
             role = "user" if msg["role"] == "user" else "model"
             gemini_history.append({"role": role, "parts": [msg["content"]]})
-        
+            
     try:
         chat = model.start_chat(history=gemini_history)
         if audio_bytes:
@@ -108,16 +111,21 @@ def get_ai_response(messages_history, system_prompt="", audio_bytes=None):
         return f"Error: {e}"
 
 # ==========================================
-# 3. 鹰架逻辑与 Edge-TTS 音频引擎
+# 3. 鹰架逻辑与音频引擎
 # ==========================================
 def clean_punctuation(text):
     return re.sub(r'[^\w\s\u4e00-\u9fff]', '', text).strip()
 
 def apply_scaffolding(student_input, target_sentence, lang_dict):
+    # 针对日期和星期的特殊保护，不弹出量词提醒
     if "几" in student_input:
+        if any(keyword in student_input for keyword in ["几月", "几号", "星期几"]):
+            return True, ""
+            
         mws = ["个", "口", "只", "本", "岁", "块", "件"]
         if not any(mw in student_input.split("几")[1][:2] for mw in mws if len(student_input.split("几")) > 1):
             return False, lang_dict["scaffold_mw"]
+            
     if "的" in target_sentence and any(p in target_sentence for p in ["上", "下", "前", "后", "里"]):
         if "的" in student_input:
             for noun in ["书", "水果", "电脑", "猫", "狗", "衣服"]:
@@ -142,24 +150,30 @@ async def handle_audio_logic(full_response):
     return display_text, None
 
 # ==========================================
-# 4. 核心路由与 Streamlit UI
+# 4. 核心路由与 UI
 # ==========================================
 def main():
-    if not KNOWLEDGE_BASE:
+    if not KNOWLEDGE_BASE: 
         st.stop()
-
+        
     st.set_page_config(page_title="AI Chinese Speaking", layout="wide")
+    
     col_empty, col_lang = st.columns([8, 2])
     with col_lang:
         ui_lang = st.selectbox("Language / Idioma", ["English", "Español"], label_visibility="collapsed")
-    
+        
     T = UI_TEXT[ui_lang]
     lang_key = "es" if ui_lang == "Español" else "en"
 
-    if 'current_view' not in st.session_state: st.session_state.current_view = "landing"
-    if 'messages' not in st.session_state: st.session_state.messages = []
-    if 'master_idx' not in st.session_state: st.session_state.master_idx = 0
-    if 'master_mode' not in st.session_state: st.session_state.master_mode = "training"
+    # 初始化全局状态
+    if 'current_view' not in st.session_state: 
+        st.session_state.current_view = "landing"
+    if 'messages' not in st.session_state: 
+        st.session_state.messages = []
+    if 'master_idx' not in st.session_state: 
+        st.session_state.master_idx = 0
+    if 'master_mode' not in st.session_state: 
+        st.session_state.master_mode = "training"
 
     # ------------------------------------------
     # Landing 主页
@@ -173,7 +187,9 @@ def main():
             if st.button(T["m1"], use_container_width=True):
                 st.session_state.current_view = "master"
                 st.session_state.messages = []
-                st.session_state.current_unit = None 
+                st.session_state.current_unit = None
+                st.session_state.master_idx = 0
+                st.session_state.master_mode = "training"
                 st.rerun()
         with c2:
             if st.button(T["m2"], use_container_width=True):
@@ -182,7 +198,6 @@ def main():
                     welcome_pal = f"👋 ¡Hola! Soy tu compañero de práctica, {DRAGON_PAL}.\n\n¿De qué te gustaría hablar hoy? Podemos charlar de forma relajada, ¡sin presiones!\n\n**小龙人:** 你好！今天想聊点什么？<audio>你好！我是小龙人。今天想聊点什么？</audio>"
                 else:
                     welcome_pal = f"👋 Hello! I'm your language partner, {DRAGON_PAL}.\n\nWhat would you like to talk about today? We can just chat casually, no pressure!\n\n**小龙人:** 你好！今天想聊点什么？<audio>你好！我是小龙人。今天想聊点什么？</audio>"
-                    
                 txt, audio = asyncio.run(handle_audio_logic(welcome_pal))
                 st.session_state.messages = [{"role": "assistant", "content": txt, "audio": audio}]
                 st.rerun()
@@ -201,22 +216,22 @@ def main():
         unit = st.sidebar.selectbox("Unit", list(KNOWLEDGE_BASE.keys()), format_func=lambda x: KNOWLEDGE_BASE[x]["title"])
         st.header(f"{DRAGON_MASTER} - {KNOWLEDGE_BASE[unit]['title']}")
         
-        # 初始化单元抽样逻辑
+        # 初始化单元抽样逻辑（最多10题）
         if 'current_unit' not in st.session_state or st.session_state.current_unit != unit:
             st.session_state.current_unit = unit
             st.session_state.master_idx = 0
             st.session_state.master_mode = "training"
             st.session_state.failed_current = False
             
-            # 提取并均匀抽样最多10题
             all_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
             sample_size = min(10, len(all_sentences))
             if sample_size > 0:
                 step = max(1, len(all_sentences) // sample_size)
-                sampled = [all_sentences[i] for i in range(0, len(all_sentences), step)][:sample_size]
+                sampled_questions = [all_sentences[i] for i in range(0, len(all_sentences), step)][:sample_size]
             else:
-                sampled = []
-            st.session_state.active_questions = sampled
+                sampled_questions = []
+                
+            st.session_state.active_questions = sampled_questions
             
             grammar_data = KNOWLEDGE_BASE[unit].get("grammar", {})
             grammar_points = grammar_data.get(lang_key, "- Core grammar\n- Basic sentence structures")
@@ -228,12 +243,14 @@ def main():
             st.session_state.messages = [{"role": "assistant", "content": welcome_msg, "audio": None}]
         
         # 当前队列题目数
-        sentences = st.session_state.active_questions
-        total_q = len(sentences)
+        questions = st.session_state.active_questions
+        total_q = len(questions)
         
-        # === 阶段 1：翻译特训 (Answer-First Substitution) ===
+        # === 阶段 1：翻译特训 ===
         if st.session_state.master_mode == "training":
             current_q = st.session_state.master_idx
+            
+            # 更新进度条
             st.progress(current_q / total_q if total_q > 0 else 0)
             st.caption(f"{T['progress']}: {current_q}/{total_q}")
             
@@ -244,21 +261,22 @@ def main():
                 st.session_state.messages.append({"role": "assistant", "content": transition_msg, "audio": None})
                 st.rerun()
             
-            target_zh = sentences[current_q]["zh"]
-            display_foreign = sentences[current_q].get(lang_key, sentences[current_q].get("en", "Translate this"))
+            target_zh = questions[current_q]["zh"]
+            display_foreign = questions[current_q].get(lang_key, questions[current_q].get("en", "Translate this"))
             st.info(f"**{T['translate_prompt']}** {display_foreign}")
             
-            for msg in st.session_state.messages:
-                with st.chat_message(msg["role"]): 
-                    st.markdown(msg["content"])
-                    if msg.get("audio"): st.audio(msg["audio"], format="audio/mp3", autoplay=False)
+            for m in st.session_state.messages:
+                with st.chat_message(m["role"]):
+                    st.markdown(m["content"])
+                    if m.get("audio"): 
+                        st.audio(m["audio"], format="audio/mp3", autoplay=False)
             
             col_input, col_mic = st.columns([9, 1])
-            with col_input:
+            with col_input: 
                 user_input_text = st.chat_input(T['input_placeholder'])
-            with col_mic:
+            with col_mic: 
                 audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_master")
-                
+            
             if user_input_text or audio_input:
                 user_text_clean = ""
                 if audio_input:
@@ -278,17 +296,17 @@ def main():
                 else:
                     if user_text_clean == clean_punctuation(target_zh):
                         correct_response = f"{T['correct']} <audio>{target_zh}</audio>"
-                        txt, audio = asyncio.run(handle_audio_logic(correct_response))
-                        st.session_state.messages.append({"role": "assistant", "content": txt, "audio": audio})
+                        txt, aud = asyncio.run(handle_audio_logic(correct_response))
+                        st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
                         
-                        # 【核心逻辑变更】：从本地题库直接抽取未做过的题进行巩固，抛弃大模型生成
+                        # 【核心逻辑】：答错后答对，从题库中抽取两道未做过的题进行惩罚/巩固
                         if getattr(st.session_state, 'failed_current', False):
                             all_unit_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
                             active_zhs = [q["zh"] for q in st.session_state.active_questions]
                             remaining_pool = [q for q in all_unit_sentences if q["zh"] not in active_zhs]
                             
                             if remaining_pool:
-                                consolidation_qs = remaining_pool[:2] # 挑2道没做过的
+                                consolidation_qs = remaining_pool[:2] 
                                 for q in reversed(consolidation_qs):
                                     st.session_state.active_questions.insert(st.session_state.master_idx + 1, q)
                                 consol_msg = "💡 **大龙人:** 刚才这道题卡了一下，我们趁热打铁，从题库里再抽两道题巩固一下！" if lang_key == 'es' else "💡 **DA LONGREN:** Let's consolidate with more questions from our boutique pool!"
@@ -300,23 +318,27 @@ def main():
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
+                            # 完美落实“先考后教”的算法级提示词
                             da_longren_translation_prompt = f"""
-                            You are {DRAGON_MASTER}, a strict but patient HSK 1 grammar tutor.
-                            The student is trying to translate: "{display_foreign}" into Chinese. 
-                            The exact target answer from the knowledge base is: "{target_zh}".
+                            You are {DRAGON_MASTER}, a strict HSK 1 grammar tutor.
+                            The student is translating: "{display_foreign}". Target: "{target_zh}".
                             
-                            CRITICAL RULES FOR SCAFFOLDING:
-                            1. NEVER give them the full target sentence "{target_zh}" directly.
-                            2. Speak entirely in {ui_lang}, but use Simplified Chinese for target words. Use **bold** to highlight Chinese keywords.
-                            3. The "Answer-First Substitution" Method: If the student uses English/Spanish word order for questions, STOP THEM. 
-                               - Step A: Ask them to translate a declarative answer first.
-                               - Step B: Once they answer that correctly, ask them to identify the keyword in Chinese.
-                               - Step C: Ask how to say the question word.
-                               - Step D: Guide them to replace ONLY the keyword with the question word.
-                            4. If they use Arabic numerals (e.g., '1', '4') instead of Chinese characters (e.g., '一', '四'), explicitly tell them: "Please use Chinese characters for numbers, not Arabic numerals."
-                            5. ABSOLUTELY NO EXTRA QUESTIONS. Do NOT invent your own examples. Your ONLY goal is to guide them until they type the EXACT sentence: "{target_zh}".
-                            6. If the student understood the grammar but hasn't typed the full exact sentence, instruct them: "Now, please type the full Chinese sentence so we can move on."
-                            7. Ask ONE question or give ONE instruction at a time. Wait for their reply.
+                            CRITICAL ALGORITHM ("Test First, Teach Later"):
+                            Analyze the chat history. Have you already provided a grammar structure for this specific sentence?
+                            
+                            - NO (1ST MISTAKE): Provide ONLY the basic grammar structure (scaffold) in {ui_lang}. DO NOT use the Answer-First method yet. DO NOT give the target answer. Ask them to try again. SHUT UP AND WAIT.
+                            
+                            - YES (2ND MISTAKE OR MORE): 
+                               1. Comfort them patiently.
+                               2. Guide them to observe the structure. NOW use the "Answer-First Substitution" method (e.g., ask for the declarative answer first, then guide them to replace the keyword).
+                               3. Provide a similar example sentence.
+                               4. Ask them to try the original sentence again. SHUT UP AND WAIT.
+                            
+                            GENERAL RULES:
+                            - NEVER give the full target sentence directly.
+                            - Speak in {ui_lang}, use **bold** Simplified Chinese for keywords.
+                            - If they use Arabic numerals, explicitly demand Chinese characters.
+                            - Ask ONE question or give ONE instruction at a time.
                             """
                             ai_feedback = get_ai_response(st.session_state.messages, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
@@ -327,27 +349,27 @@ def main():
             st.success("🔥 **Review Phase Activated! / ¡Fase de Revisión Activada!**")
             pool = KNOWLEDGE_BASE[unit].get("dialogues", [])
             
-            da_longren_prompt = f"""
-            You are {DRAGON_MASTER}, a professional and patient Chinese HSK 1 grammar tutor. 
-            You are currently in the 'Dialogue & Review' phase. 
-            Communicate with the student entirely in {ui_lang}, but use Simplified Chinese ONLY for target words/sentences. Never use Chinese for your explanations. Only output <audio> tags when the student's answer is perfectly correct.
-
-            STRICT VOCABULARY AND CONTENT RULE:
-            You must ONLY ask questions from this exact knowledge base pool to ensure you do not use vocabulary outside of HSK 1: {json.dumps(pool, ensure_ascii=False)}. 
-
-            Strict Teaching Protocol:
-            1. Ask ONE question at a time from the pool. Just wait for the reply.
-            2. If CORRECT on the first try: Praise them in {ui_lang}, output the correct Chinese sentence in an <audio> tag, and pick a new question.
-            3. If INCORRECT (1st time): Provide the basic grammar structure (scaffold) in {ui_lang} without giving the direct answer. Ask them to try again.
-            4. If INCORRECT (2nd time): Comfort them patiently. Explicitly guide them to observe the structure and replace the target word.
-            5. Consolidation: If the student gets it right AFTER making mistakes, IMMEDIATELY ask a similar follow-up question (changing only a small detail) to consolidate.
-            6. Goal: Complete exactly 5 different questions.
+            # 同样落实“先考后教”的对话算法
+            da_longren_dialogue_prompt = f"""
+            You are {DRAGON_MASTER} in the 'Dialogue & Review' phase. 
+            Output <audio> tags ONLY when the student's answer is perfectly correct.
+            
+            STRICT RULE: ONLY ask questions from this pool: {json.dumps(pool, ensure_ascii=False)}. Do NOT invent new questions.
+            
+            CRITICAL ALGORITHM ("Test First, Teach Later"):
+            1. NEVER PREEMPT: Ask ONE question from the pool. DO NOT provide structure or hints before they answer. SHUT UP AND WAIT.
+            2. IF CORRECT: Praise in {ui_lang}, output the correct Chinese sentence in an <audio> tag, and pick a new question from the pool.
+            3. IF 1ST MISTAKE: Provide ONLY the basic grammar structure (scaffold) in {ui_lang} without giving the direct answer. Ask them to try again. SHUT UP AND WAIT.
+            4. IF 2ND MISTAKE OR MORE: Comfort them patiently. Guide them to observe the structure (e.g., "replace the keyword"). Provide a similar example, then ask them to try the original question again. SHUT UP AND WAIT.
+            5. CONSOLIDATION REWARD: If the student gets it right AFTER making mistakes, IMMEDIATELY ask a similar follow-up question (same structure, different keyword) to consolidate muscle memory!
+            6. Stop after exactly 5 base questions.
             """
             
-            for msg in st.session_state.messages:
-                with st.chat_message(msg["role"]): 
-                    st.markdown(msg["content"])
-                    if msg.get("audio"): st.audio(msg["audio"], format="audio/mp3", autoplay=False)
+            for m in st.session_state.messages:
+                with st.chat_message(m["role"]): 
+                    st.markdown(m["content"])
+                    if m.get("audio"): 
+                        st.audio(m["audio"], format="audio/mp3", autoplay=False)
             
             col_input, col_mic = st.columns([9, 1])
             with col_input:
@@ -365,9 +387,9 @@ def main():
                     
                 with st.spinner(T['analyzing']):
                     audio_bytes = audio_input['bytes'] if audio_input else None
-                    raw_ai_reply = get_ai_response(st.session_state.messages, da_longren_prompt, audio_bytes=audio_bytes)
-                    txt, audio = asyncio.run(handle_audio_logic(raw_ai_reply))
-                    st.session_state.messages.append({"role": "assistant", "content": txt, "audio": audio})
+                    raw_ai_reply = get_ai_response(st.session_state.messages, da_longren_dialogue_prompt, audio_bytes=audio_bytes)
+                    txt, aud = asyncio.run(handle_audio_logic(raw_ai_reply))
+                    st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
                 st.rerun()
 
     # ------------------------------------------
