@@ -465,7 +465,7 @@ def main():
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
-                            # 【修复点】：移除容易引起误解的 "SHUT UP AND WAIT" 字眼
+                            # 【终极修复】：引入句型分流器，防止陈述句误触发“先答后换”逻辑
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, a strict HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". Target: "{target_zh}".
@@ -474,17 +474,27 @@ def main():
                             LANGUAGE RULE:
                             Speak to the student entirely in {ui_lang}. ONLY the target Chinese words/sentences should be in Simplified Chinese.
                             
-                            CRITICAL ALGORITHM:
-                            1. IF FOREIGN WORD ORDER OR DIRECT TRANSLATION DETECTED (e.g. putting question word at start, OR using "哪月" instead of "几月", "什么是你的名字" instead of "你叫什么名字"):
+                            CRITICAL ALGORITHM (Follow strictly based on sentence type):
+                            1. IS THE TARGET SENTENCE A QUESTION? (Check if "{target_zh}" contains a question mark or question words like 什么, 几, 哪).
+                               IF YES, AND you detect direct translation (e.g. "什么是你的名字", "什么星期"):
                                - Say in {ui_lang}: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the declarative answer to this question first."
-                               - Ask them to provide the declarative answer (e.g., "I am going to China in June" or "My name is Lucia"). Wait for their reply.
-                               - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, to form the question, replace the specific word (like the specific name or number) with the correct question word (like '什么' or '几')." DO NOT replace chunks.
-                               - IMPORTANT: Stop generating text immediately after your instruction. Do NOT output the words "SHUT UP AND WAIT".
-                            2. If it's a normal mistake (1st time), just give the basic grammar structure scaffold in {ui_lang}.
-                            3. If normal mistake (2nd time+), comfort them, give a similar example, and ask them to try again.
-                            4. DO NOT say "you can omit 是 or 的" just focus on building the correct sentence logically.
-                            5. NEVER give the full answer directly.
-                            6. DO NOT say goodbye or wrap up.
+                               - Ask them to provide the declarative answer (e.g., "My name is Lucia" or "Tomorrow is Tuesday"). Wait for their reply.
+                               - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, to form the question, replace the specific word (like the name or number) with the correct question word." 
+                               - Stop generating immediately.
+                               
+                            2. IS THE TARGET SENTENCE A STATEMENT? (e.g. Target is "我叫Lucia", but student says "我名字是Lucia").
+                               IF YES, AND you detect direct translation:
+                               - Say in {ui_lang}: "This is typical foreign language thinking. Let's look at the correct Chinese structure."
+                               - Provide the basic grammar structure scaffold (e.g., "In Chinese, to say 'My name is', we use Subject + 叫 + Name").
+                               - Ask them to try again.
+                               - Stop generating immediately.
+                               
+                            3. IF IT'S A NORMAL MISTAKE (1st time): Just give the basic grammar structure scaffold in {ui_lang}.
+                            4. IF IT'S A NORMAL MISTAKE (2nd time+): Comfort them, give a similar example, and ask them to try again.
+                            5. DO NOT EXPLAIN OMISSIONS. DO NOT say "you can omit 是 or 的". Just focus on building the exact structure logically.
+                            6. NEVER give the full answer directly.
+                            7. DO NOT output internal commands like "SHUT UP AND WAIT".
+                            8. DO NOT say goodbye or wrap up.
                             """
                             ai_feedback = get_ai_response(st.session_state.messages, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
