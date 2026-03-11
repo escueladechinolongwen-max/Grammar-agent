@@ -465,6 +465,7 @@ def main():
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
+                            # 【修复点】：移除容易引起误解的 "SHUT UP AND WAIT" 字眼
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, a strict HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". Target: "{target_zh}".
@@ -474,11 +475,11 @@ def main():
                             Speak to the student entirely in {ui_lang}. ONLY the target Chinese words/sentences should be in Simplified Chinese.
                             
                             CRITICAL ALGORITHM:
-                            1. IF FOREIGN WORD ORDER OR DIRECT TRANSLATION DETECTED (e.g. putting question word at start, OR using "哪月" instead of "几月", "什么天/什么星期" instead of "星期几"):
+                            1. IF FOREIGN WORD ORDER OR DIRECT TRANSLATION DETECTED (e.g. putting question word at start, OR using "哪月" instead of "几月", "什么是你的名字" instead of "你叫什么名字"):
                                - Say in {ui_lang}: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the declarative answer to this question first."
-                               - Ask them to provide the declarative answer (e.g., "I am going to China in June" or "Tomorrow is Tuesday"). Wait for their reply.
-                               - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, to form the question, replace the specific number (like 六 or 二) with the question word 几". DO NOT replace chunks.
-                               - SHUT UP AND WAIT.
+                               - Ask them to provide the declarative answer (e.g., "I am going to China in June" or "My name is Lucia"). Wait for their reply.
+                               - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, to form the question, replace the specific word (like the specific name or number) with the correct question word (like '什么' or '几')." DO NOT replace chunks.
+                               - IMPORTANT: Stop generating text immediately after your instruction. Do NOT output the words "SHUT UP AND WAIT".
                             2. If it's a normal mistake (1st time), just give the basic grammar structure scaffold in {ui_lang}.
                             3. If normal mistake (2nd time+), comfort them, give a similar example, and ask them to try again.
                             4. DO NOT say "you can omit 是 or 的" just focus on building the correct sentence logically.
