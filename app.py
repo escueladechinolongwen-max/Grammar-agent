@@ -240,10 +240,15 @@ def main():
         st.session_state.master_mode = "training"
     if 'qa_idx' not in st.session_state: 
         st.session_state.qa_idx = 0
+    if 'qa_retry_count' not in st.session_state: 
+        st.session_state.qa_retry_count = 0
     if 'consolidation_count' not in st.session_state: 
         st.session_state.consolidation_count = 0
     if 'asked_questions' not in st.session_state: 
         st.session_state.asked_questions = []
+    # 全局音频哈希锁，用于防止语音组件引起死循环
+    if 'last_audio_hash' not in st.session_state:
+        st.session_state.last_audio_hash = None
 
     # ------------------------------------------
     # 首页视图
@@ -295,8 +300,10 @@ def main():
             st.session_state.failed_current = False
             st.session_state.consolidation_count = 0 
             st.session_state.qa_idx = 0
+            st.session_state.qa_retry_count = 0
             st.session_state.asked_questions = []
             st.session_state.pool_seed = int(time.time())
+            st.session_state.last_audio_hash = None
             
             # 1. 抽取翻译题 (分桶随机抽样算法)
             all_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
@@ -321,23 +328,19 @@ def main():
             raw_qa_pool = []
             seen_qa = set()
             
-            # 纳入原生 dialogues
             for item in all_dialogues:
                 text = get_question_text(item)
                 if text not in seen_qa:
                     raw_qa_pool.append(item)
                     seen_qa.add(text)
                     
-            # 嗅探 sentences 里的问句
             for item in all_sentences:
                 zh_text = get_question_text(item)
                 if ("？" in zh_text or "?" in zh_text) and zh_text not in seen_qa:
                     raw_qa_pool.append(item)
                     seen_qa.add(zh_text)
                     
-            # 获取已用于翻译题的文本，用于防撞车分离
             translation_texts = {get_question_text(q) for q in sampled_questions}
-            
             primary_qa = [q for q in raw_qa_pool if get_question_text(q) not in translation_texts]
             fallback_qa = [q for q in raw_qa_pool if get_question_text(q) in translation_texts]
             
@@ -345,7 +348,6 @@ def main():
             random.shuffle(primary_qa)
             random.shuffle(fallback_qa)
             
-            # 优先从首选池凑齐 5 题
             final_qa_pool = (primary_qa + fallback_qa)[:5]
             
             st.session_state.full_qa_pool = final_qa_pool
@@ -378,6 +380,7 @@ def main():
             if current_q >= total_q:
                 st.session_state.master_mode = "dialogue_pool"
                 st.session_state.qa_idx = 0
+                st.session_state.qa_retry_count = 0
                 st.balloons()
                 
                 st.session_state.qa_pool = st.session_state.get('full_qa_pool', [])
@@ -404,14 +407,12 @@ def main():
             target_zh = get_question_text(questions[current_q])
             display_foreign = get_foreign_text(questions[current_q], lang_key)
             
-            # 渲染历史对话记录
             for m in st.session_state.messages:
                 with st.chat_message(m["role"]):
                     st.markdown(m["content"])
                     if m.get("audio"): 
                         st.audio(m["audio"], format="audio/mp3", autoplay=False)
             
-            # 当前题目悬停底部
             st.info(f"🎯 **Current Challenge:** Translate to Chinese: **{display_foreign}**")
             
             col_input, col_mic = st.columns([9, 1])
@@ -420,9 +421,14 @@ def main():
             with col_mic: 
                 audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_master")
             
-            if user_input_text or audio_input:
+            # 音频死循环锁
+            audio_hash = hash(audio_input['bytes']) if audio_input else None
+            is_new_audio = audio_input and (audio_hash != st.session_state.last_audio_hash)
+
+            if user_input_text or is_new_audio:
                 user_text_clean = ""
-                if audio_input:
+                if is_new_audio:
+                    st.session_state.last_audio_hash = audio_hash
                     with st.spinner(T['transcribing']):
                         transcribed_text = transcribe_audio_to_text(audio_input['bytes'])
                         st.session_state.messages.append({"role": "user", "content": f"🎤 {transcribed_text}"})
@@ -442,7 +448,6 @@ def main():
                         txt, aud = asyncio.run(handle_audio_logic(correct_response))
                         st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
                         
-                        # 触发错题巩固 (限制最多2题)
                         if getattr(st.session_state, 'failed_current', False) and st.session_state.consolidation_count < 2:
                             all_unit_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
                             active_zhs = [get_question_text(q) for q in st.session_state.active_questions]
@@ -460,7 +465,6 @@ def main():
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
-                            # 精准打击“哪月/什么星期”等外星中文
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, a strict HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". Target: "{target_zh}".
@@ -511,9 +515,14 @@ def main():
                     audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_pool")
                 else:
                     audio_input = None
-                
-            if user_input or audio_input:
-                if audio_input:
+            
+            # 音频死循环锁
+            audio_hash = hash(audio_input['bytes']) if audio_input else None
+            is_new_audio = audio_input and (audio_hash != st.session_state.last_audio_hash)
+
+            if user_input or is_new_audio:
+                if is_new_audio:
+                    st.session_state.last_audio_hash = audio_hash
                     with st.spinner(T['transcribing']):
                         transcribed_text = transcribe_audio_to_text(audio_input['bytes'])
                         st.session_state.messages.append({"role": "user", "content": f"🎤 {transcribed_text}"})
@@ -542,6 +551,8 @@ def main():
                     
                     if "[PASS]" in raw_ai_reply:
                         st.session_state.qa_idx += 1
+                        st.session_state.qa_retry_count = 0 
+                        
                         display_reply = raw_ai_reply.replace("[PASS]", "").strip()
                         txt, aud = asyncio.run(handle_audio_logic(display_reply))
                         st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
@@ -556,8 +567,29 @@ def main():
                             etxt, eaud = asyncio.run(handle_audio_logic(end_msg))
                             st.session_state.messages.append({"role": "assistant", "content": etxt, "audio": eaud})
                     else:
+                        st.session_state.qa_retry_count += 1
                         txt, aud = asyncio.run(handle_audio_logic(raw_ai_reply))
-                        st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
+                        
+                        # 熔断机制：答错达到 3 次强制跳过
+                        if st.session_state.qa_retry_count >= 3:
+                            st.session_state.qa_retry_count = 0
+                            st.session_state.qa_idx += 1
+                            
+                            skip_hint = "\n\n💡 **DA LONGREN:** Parece que estás atascado aquí. ¡No te preocupes, pasemos a la siguiente!" if lang_key == "es" else "\n\n💡 **DA LONGREN:** It seems you are stuck here. Don't worry, let's move on to the next one!"
+                            txt += skip_hint
+                            st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
+                            
+                            if st.session_state.qa_idx < total_qa:
+                                next_q = get_question_text(st.session_state.qa_pool[st.session_state.qa_idx])
+                                next_msg = f"🎯 **Next Question:** {next_q} <audio>{next_q}</audio>"
+                                ntxt, naud = asyncio.run(handle_audio_logic(next_msg))
+                                st.session_state.messages.append({"role": "assistant", "content": ntxt, "audio": naud})
+                            else:
+                                end_msg = "🎉 **恭喜完成所有难关，非常棒！**\n\n顺利完成了翻译和情景问答！这次课程到此结束，下课啦！希望能继续保持对中文的热情，下次再见！💪 <audio>恭喜攻克所有难关，下课啦！</audio>" if lang_key == "es" else "🎉 **Congratulations on overcoming all challenges, excellent work!**\n\nYou successfully finished the translation and Q&A! This class is now over. Hope you keep up your passion for Chinese, see you next time! 💪 <audio>恭喜攻克所有难关，下课啦！</audio>"
+                                etxt, eaud = asyncio.run(handle_audio_logic(end_msg))
+                                st.session_state.messages.append({"role": "assistant", "content": etxt, "audio": eaud})
+                        else:
+                            st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
                         
                 st.rerun()
 
@@ -604,8 +636,13 @@ def main():
         with col_mic:
             audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_pal")
             
-        if user_input or audio_input:
-            if audio_input:
+        # 音频死循环锁
+        audio_hash = hash(audio_input['bytes']) if audio_input else None
+        is_new_audio = audio_input and (audio_hash != st.session_state.last_audio_hash)
+
+        if user_input or is_new_audio:
+            if is_new_audio:
+                st.session_state.last_audio_hash = audio_hash
                 st.session_state.messages.append({"role": "user", "content": "🎤 [Voice Message]"})
             else:
                 st.session_state.messages.append({"role": "user", "content": user_input})
