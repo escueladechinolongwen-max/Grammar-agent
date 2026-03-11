@@ -504,15 +504,15 @@ def main():
                                - Gently point out the specific character mistake.
                                - Stop generating immediately.
                                
-                            2. IS IT A "谁" (WHO) QUESTION? (e.g., Target contains "谁"):
-                               - Say warmly in {ui_lang}: "Good try! In Chinese, even for questions, we stick to the simplest declarative structure: Subject + Verb + Object. The question word '谁' just sits in the Object position."
-                               - Guide them to use this basic Subject + Verb + Object scaffold to fix their sentence.
-                               - Stop generating immediately.
-                               
-                            3. IS IT A QUESTION WITH "什么", "几", OR "哪"? (e.g. "什么是你的名字", "哪月"):
+                            2. IS IT A QUESTION WITH "谁的" (WHOSE), "什么" (WHAT), "几" (HOW MANY), OR "哪" (WHICH)? (e.g. Target contains "谁的", "什么", "几", "哪"):
                                - Say warmly in {ui_lang}: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the declarative answer to this question first."
                                - Ask them to provide the declarative answer USING THE EXACT SAME SUBJECT PRONOUN as the target. Wait for their reply.
                                - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, replace the specific word with the correct question word."
+                               - Stop generating immediately.
+
+                            3. IS IT A SIMPLE "谁" (WHO) QUESTION WITHOUT "的"? (e.g., Target contains "谁" but NOT "谁的", like "他们是谁？"):
+                               - Say warmly in {ui_lang}: "Good try! In Chinese, even for questions, we stick to the simplest declarative structure: Subject + Verb + Object. The question word '谁' just sits in the Object or Subject position."
+                               - Guide them to use this basic Subject + Verb + Object scaffold to fix their sentence.
                                - Stop generating immediately.
                                
                             4. IS THE TARGET SENTENCE A STATEMENT? (e.g. Target is "我叫Lucia", but student says "我名字是Lucia"):
