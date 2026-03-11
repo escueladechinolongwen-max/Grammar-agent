@@ -465,35 +465,39 @@ def main():
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
-                            # 【人设润滑补丁注入】：在严格判断的基础上，强迫 AI 充满热情与鼓励
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, an enthusiastic, patient, and deeply encouraging HSK 1 grammar tutor.
-                            The student is translating: "{display_foreign}". Target: "{target_zh}".
-                            The student's input failed the exact match check.
+                            The student is translating: "{display_foreign}". 
+                            Target answer: "{target_zh}".
+                            Student's actual input: "{user_text_clean}".
                             
                             LANGUAGE & TONE RULE:
                             1. Speak to the student entirely in {ui_lang}. ONLY the target Chinese words/sentences should be in Simplified Chinese.
-                            2. TONE: Be warm and supportive! Use encouraging phrases like "Don't worry!", "You are so close!", or "Great try!" and add friendly emojis (🌟, 💡, 💪, etc.). Do not sound like a cold machine.
+                            2. TONE: Be warm and supportive! Use encouraging phrases like "Don't worry!", "You are so close!", or "Great try!" and add friendly emojis.
                             
-                            CRITICAL ALGORITHM (Follow strictly based on sentence type):
-                            1. IS THE TARGET SENTENCE A QUESTION? (Check if "{target_zh}" contains a question mark or question words like 什么, 几, 哪).
-                               IF YES, AND you detect direct translation (e.g. "什么是你的名字", "什么星期"):
+                            CRITICAL ALGORITHM (Analyze the student's actual input against the target):
+                            1. DID THEY JUST USE THE WRONG CHARACTER/PRONOUN? (e.g., student inputted '他' instead of '她', or vice versa):
+                               - Gently point out the specific character mistake (e.g., "You got the structure and pronunciation perfectly right, but check the Chinese character for 'he/she/it'!" or similar).
+                               - Stop generating immediately.
+                               
+                            2. IS THE TARGET SENTENCE A QUESTION? (Check if "{target_zh}" contains a question mark or question words like 什么, 几, 哪).
+                               IF YES, AND you detect direct translation in their input (e.g. "什么是你的名字", "什么星期"):
                                - Say warmly in {ui_lang}: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the declarative answer to this question first."
                                - Ask them to provide the declarative answer (e.g., "My name is Lucia" or "Tomorrow is Tuesday"). Wait for their reply.
                                - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, to form the question, replace the specific word (like the name or number) with the correct question word." 
                                - Stop generating immediately.
                                
-                            2. IS THE TARGET SENTENCE A STATEMENT? (e.g. Target is "我叫Lucia", but student says "我名字是Lucia").
+                            3. IS THE TARGET SENTENCE A STATEMENT? (e.g. Target is "我叫Lucia", but student says "我名字是Lucia").
                                IF YES, AND you detect direct translation:
                                - Say warmly in {ui_lang}: "Good try! However, this is typical foreign language thinking. Let's look at the correct Chinese structure."
                                - Provide the basic grammar structure scaffold (e.g., "In Chinese, to say 'My name is', we use Subject + 叫 + Name").
                                - Gently ask them to try again.
                                - Stop generating immediately.
                                
-                            3. IF IT'S A NORMAL MISTAKE (1st time): Kindly give the basic grammar structure scaffold in {ui_lang}.
-                            4. IF IT'S A NORMAL MISTAKE (2nd time+): Comfort them warmly, give a similar example, and ask them to try again.
-                            5. DO NOT EXPLAIN OMISSIONS. DO NOT say "you can omit 是 or 的". Just focus on building the exact structure logically.
-                            6. NEVER give the full answer directly.
+                            4. NORMAL MISTAKES: Point out specifically what is missing or wrong based on their actual input (e.g., "You forgot the word for 'teacher'") OR give the basic grammar scaffold.
+                            
+                            5. STRICTEST RULE: NEVER give the full correct target sentence ("{target_zh}") directly in your response! NEVER! You must guide the student to correct their own input.
+                            6. DO NOT EXPLAIN OMISSIONS. DO NOT say "you can omit 是 or 的".
                             7. DO NOT output internal commands like "SHUT UP AND WAIT".
                             8. DO NOT say goodbye or wrap up.
                             """
@@ -544,7 +548,6 @@ def main():
                 with st.spinner(T['analyzing']):
                     current_q_zh = get_question_text(st.session_state.qa_pool[st.session_state.qa_idx])
                     
-                    # 【人设润滑补丁注入】：让 Q&A 阶段的反馈变得更具情绪价值
                     da_longren_qa_prompt = f"""
                     You are {DRAGON_MASTER}, a warm, encouraging, and highly supportive HSK 1 grammar tutor conducting a Q&A test. 
                     You just asked the student: "{current_q_zh}"
@@ -650,7 +653,7 @@ def main():
         with col_mic:
             audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_pal")
             
-        # 音频死循环锁
+        # 【核心修复】：切断旧语音伴随文字发送的幽灵 Bug
         audio_hash = hash(audio_input['bytes']) if audio_input else None
         is_new_audio = audio_input and (audio_hash != st.session_state.last_audio_hash)
 
@@ -667,7 +670,8 @@ def main():
                 system_prompt = f"当前身份是'{DRAGON_PAL}'，一个热情、幽默的中文语伴。请务必使用简单的 HSK 1 词汇。每次回复都要在最后加上 <audio>发音的中文句子</audio> 标签。"
             
             with st.spinner("Analyzing..."):
-                audio_bytes = audio_input['bytes'] if audio_input else None
+                # 【关键修复】：仅当 is_new_audio 为真时，才向大模型传输语音字节码
+                audio_bytes = audio_input['bytes'] if is_new_audio else None
                 raw_ai_reply = get_ai_response(st.session_state.messages, system_prompt, audio_bytes=audio_bytes)
                 txt, audio = asyncio.run(handle_audio_logic(raw_ai_reply))
                 st.session_state.messages.append({"role": "assistant", "content": txt, "audio": audio})
