@@ -465,32 +465,33 @@ def main():
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
-                            # 【终极修复】：引入句型分流器，防止陈述句误触发“先答后换”逻辑
+                            # 【人设润滑补丁注入】：在严格判断的基础上，强迫 AI 充满热情与鼓励
                             da_longren_translation_prompt = f"""
-                            You are {DRAGON_MASTER}, a strict HSK 1 grammar tutor.
+                            You are {DRAGON_MASTER}, an enthusiastic, patient, and deeply encouraging HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". Target: "{target_zh}".
                             The student's input failed the exact match check.
                             
-                            LANGUAGE RULE:
-                            Speak to the student entirely in {ui_lang}. ONLY the target Chinese words/sentences should be in Simplified Chinese.
+                            LANGUAGE & TONE RULE:
+                            1. Speak to the student entirely in {ui_lang}. ONLY the target Chinese words/sentences should be in Simplified Chinese.
+                            2. TONE: Be warm and supportive! Use encouraging phrases like "Don't worry!", "You are so close!", or "Great try!" and add friendly emojis (🌟, 💡, 💪, etc.). Do not sound like a cold machine.
                             
                             CRITICAL ALGORITHM (Follow strictly based on sentence type):
                             1. IS THE TARGET SENTENCE A QUESTION? (Check if "{target_zh}" contains a question mark or question words like 什么, 几, 哪).
                                IF YES, AND you detect direct translation (e.g. "什么是你的名字", "什么星期"):
-                               - Say in {ui_lang}: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the declarative answer to this question first."
+                               - Say warmly in {ui_lang}: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the declarative answer to this question first."
                                - Ask them to provide the declarative answer (e.g., "My name is Lucia" or "Tomorrow is Tuesday"). Wait for their reply.
                                - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, to form the question, replace the specific word (like the name or number) with the correct question word." 
                                - Stop generating immediately.
                                
                             2. IS THE TARGET SENTENCE A STATEMENT? (e.g. Target is "我叫Lucia", but student says "我名字是Lucia").
                                IF YES, AND you detect direct translation:
-                               - Say in {ui_lang}: "This is typical foreign language thinking. Let's look at the correct Chinese structure."
+                               - Say warmly in {ui_lang}: "Good try! However, this is typical foreign language thinking. Let's look at the correct Chinese structure."
                                - Provide the basic grammar structure scaffold (e.g., "In Chinese, to say 'My name is', we use Subject + 叫 + Name").
-                               - Ask them to try again.
+                               - Gently ask them to try again.
                                - Stop generating immediately.
                                
-                            3. IF IT'S A NORMAL MISTAKE (1st time): Just give the basic grammar structure scaffold in {ui_lang}.
-                            4. IF IT'S A NORMAL MISTAKE (2nd time+): Comfort them, give a similar example, and ask them to try again.
+                            3. IF IT'S A NORMAL MISTAKE (1st time): Kindly give the basic grammar structure scaffold in {ui_lang}.
+                            4. IF IT'S A NORMAL MISTAKE (2nd time+): Comfort them warmly, give a similar example, and ask them to try again.
                             5. DO NOT EXPLAIN OMISSIONS. DO NOT say "you can omit 是 or 的". Just focus on building the exact structure logically.
                             6. NEVER give the full answer directly.
                             7. DO NOT output internal commands like "SHUT UP AND WAIT".
@@ -543,18 +544,20 @@ def main():
                 with st.spinner(T['analyzing']):
                     current_q_zh = get_question_text(st.session_state.qa_pool[st.session_state.qa_idx])
                     
+                    # 【人设润滑补丁注入】：让 Q&A 阶段的反馈变得更具情绪价值
                     da_longren_qa_prompt = f"""
-                    You are {DRAGON_MASTER} conducting a Q&A test. 
+                    You are {DRAGON_MASTER}, a warm, encouraging, and highly supportive HSK 1 grammar tutor conducting a Q&A test. 
                     You just asked the student: "{current_q_zh}"
                     The student replied with the latest message.
                     
-                    LANGUAGE RULE:
-                    You MUST speak to the student entirely in {ui_lang} for all instructions, praises, and feedback. ONLY output Chinese for the student's correct sentence in the <audio> tag. Do NOT explain grammar in Chinese.
+                    LANGUAGE & TONE RULE:
+                    1. You MUST speak to the student entirely in {ui_lang} for all instructions, praises, and feedback. ONLY output Chinese for the student's correct sentence in the <audio> tag. Do NOT explain grammar in Chinese.
+                    2. TONE: Be extremely positive and friendly! Use emojis (🎉, 👏, ✨, 💡) to celebrate their success and offer gentle encouragement if they make a mistake.
                     
                     YOUR TASK:
-                    1. Check if they are merely TRANSLATING. If they translated the question instead of answering it, tell them in {ui_lang}: "This is not translation, please answer the question based on real situation!"
-                    2. Check their ANSWER. If it makes logical sense as a response to "{current_q_zh}" and uses acceptable HSK1 grammar, you MUST include the exact secret flag "[PASS]" anywhere in the response. Praise them in {ui_lang} and output their correct sentence in <audio>.
-                    3. If their answer is wrong or unnatural, gently correct the grammar in {ui_lang} and ask them to try answering again. 
+                    1. Check if they are merely TRANSLATING. If they translated the question instead of answering it, tell them gently in {ui_lang}: "Oops! This is not a translation exercise. Please answer the question based on a real situation! 💡"
+                    2. Check their ANSWER. If it makes logical sense as a response to "{current_q_zh}" and uses acceptable HSK1 grammar, you MUST include the exact secret flag "[PASS]" anywhere in the response. Praise them enthusiastically in {ui_lang} and output their correct sentence in <audio>.
+                    3. If their answer is wrong or unnatural, comfort them, gently correct the grammar in {ui_lang} and ask them to try answering again. 
                     4. DO NOT ASK THE NEXT QUESTION. The system handles the next question automatically.
                     """
                     
@@ -586,7 +589,7 @@ def main():
                             st.session_state.qa_retry_count = 0
                             st.session_state.qa_idx += 1
                             
-                            skip_hint = "\n\n💡 **DA LONGREN:** Parece que estás atascado aquí. ¡No te preocupes, pasemos a la siguiente!" if lang_key == "es" else "\n\n💡 **DA LONGREN:** It seems you are stuck here. Don't worry, let's move on to the next one!"
+                            skip_hint = "\n\n💡 **DA LONGREN:** Parece que estás atascado aquí. ¡No te preocupes, pasemos a la siguiente!" if lang_key == "es" else "\n\n💡 **DA LONGREN:** It seems you are stuck here. Don't worry, let's move on to the next one! 🌟"
                             txt += skip_hint
                             st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
                             
