@@ -37,6 +37,7 @@ SCENARIO_DB = {
     "🛒 Shopping": {"goal_en": "Buy clothes.", "goal_es": "Compra ropa.", "prompt": "现在的身份是服装店的老板。请用HSK1词汇。第一句请说：'欢迎光临，你想买什么？'", "ai_start_zh": "欢迎光临，你想买什么？"}
 }
 
+# 【核心修复】：补齐了 scaffold_mw 和 scaffold_de 的多语言文本
 UI_TEXT = {
     "Español": {
         "title": "Aprendizaje de Chino AI",
@@ -47,7 +48,9 @@ UI_TEXT = {
         "incorrect": "⚠️ Incorrecto. La expresión estándar es:",
         "transcribing": "Transcribiendo audio...",
         "analyzing": "Analizando...",
-        "progress": "Progreso"
+        "progress": "Progreso",
+        "scaffold_mw": "💡 **Pista:** En chino, al preguntar 'cuántos' con '几', normalmente necesitas un clasificador (como 个, 口, 本) justo después. ¡Inténtalo de nuevo!",
+        "scaffold_de": "💡 **Pista:** Cuando usas palabras de posición (como 上/下/里), normalmente se unen directamente al sustantivo sin '的' (ej. 桌子上, no 桌子的上). ¡Inténtalo de nuevo!"
     },
     "English": {
         "title": "AI Chinese Speaking",
@@ -58,7 +61,9 @@ UI_TEXT = {
         "incorrect": "⚠️ Incorrect. The standard expression is:",
         "transcribing": "Transcribing audio...",
         "analyzing": "Analyzing...",
-        "progress": "Progress"
+        "progress": "Progress",
+        "scaffold_mw": "💡 **Hint:** In Chinese, when asking 'how many' with '几', you usually need a measure word (like 个, 口, 本) right after it. Try again!",
+        "scaffold_de": "💡 **Hint:** When using position words (like 上/下/里), they usually attach directly to the noun without '的' (e.g., 桌子上, not 桌子的上). Try again!"
     }
 }
 
@@ -87,12 +92,10 @@ def get_ai_response(messages_history, system_prompt="", audio_bytes=None):
     genai.configure(api_key=API_KEY)
     model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=system_prompt)
     
-    # 安全合并连续的 user/model 消息，防止 400 错误
     gemini_history = []
     for msg in messages_history[:-1]:
         role = "user" if msg["role"] == "user" else "model"
         content = msg["content"]
-        # 清除音频标签，防止大模型误读干扰
         content = re.sub(r'<audio[^>]*>.*?</audio>', '', content)
         
         if not gemini_history:
@@ -118,7 +121,6 @@ def get_ai_response(messages_history, system_prompt="", audio_bytes=None):
 # 3. 智能宽容判分、安全文本提取 & 音频引擎
 # ==========================================
 def get_question_text(q_item):
-    """安全提取问题文本，防 KeyError"""
     if isinstance(q_item, str):
         return q_item
     if isinstance(q_item, dict):
@@ -133,30 +135,25 @@ def get_question_text(q_item):
     return str(q_item)
 
 def get_foreign_text(q_item, lang_key):
-    """安全提取外语翻译文本"""
     if isinstance(q_item, dict):
         return q_item.get(lang_key, q_item.get("en", "Translate this"))
     return "Translate this"
 
 def is_translation_match(user_input, target):
-    """高级语感判分引擎：根据 HSK1 规则进行智能放行"""
     def clean(t):
         return re.sub(r'[^\w\u4e00-\u9fff]', '', t).strip()
 
     u_clean = clean(user_input)
     t_clean = clean(target)
 
-    # 1. 绝对一致直接放行
     if u_clean == t_clean:
         return True
 
-    # 2. 单复数/敬语等价 (你/你们/您/您们)
     u_temp = u_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     t_temp = t_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     if u_temp == t_temp:
         return True
 
-    # 3. 亲属/场所“的”字精确豁免
     close_nouns = ["妈妈", "爸爸", "哥哥", "姐姐", "弟弟", "妹妹", "朋友", "家", "学校", "老师", "名字"]
     u_de = u_temp
     t_de = t_temp
@@ -166,7 +163,6 @@ def is_translation_match(user_input, target):
     if u_de == t_de:
         return True
 
-    # 4. 日期/时间语境下的“哪天/几号”等价与“是”字豁免
     u_time = u_de.replace("哪天", "几号")
     t_time = t_de.replace("哪天", "几号")
     date_keywords = ["月", "号", "日", "星期", "今天", "明天", "昨天", "今年", "明年", "去年", "几"]
@@ -180,7 +176,6 @@ def is_translation_match(user_input, target):
     return False
 
 def apply_scaffolding(student_input, target_sentence, lang_dict):
-    # 特定题型不触发量词鹰架
     if "几" in student_input:
         if any(keyword in student_input for keyword in ["几月", "几号", "星期几"]):
             return True, ""
@@ -197,14 +192,12 @@ def apply_scaffolding(student_input, target_sentence, lang_dict):
     return True, ""
 
 async def generate_tts_audio(text, voice_code="zh-CN-XiaoxiaoNeural"):
-    # 增加随机数防止缓存冲突
     output_file = f"temp_audio_{int(time.time())}_{random.randint(100,999)}.mp3"
     communicate = edge_tts.Communicate(text, voice_code)
     await communicate.save(output_file)
     return output_file
 
 async def handle_audio_logic(full_response):
-    # 精准剥离 <audio> 标签用于渲染组件
     clean_text = re.sub(r'<audio[^>]*>.*?</audio>', '', full_response, flags=re.DOTALL).strip()
     audio_match = re.search(r'<audio[^>]*>(.*?)</audio>', full_response, flags=re.DOTALL)
     
@@ -229,7 +222,6 @@ def main():
     T = UI_TEXT[ui_lang]
     lang_key = "es" if ui_lang == "Español" else "en"
 
-    # 全局状态初始化
     if 'current_view' not in st.session_state: 
         st.session_state.current_view = "landing"
     if 'messages' not in st.session_state: 
@@ -246,13 +238,9 @@ def main():
         st.session_state.consolidation_count = 0
     if 'asked_questions' not in st.session_state: 
         st.session_state.asked_questions = []
-    # 全局音频哈希锁，用于防止语音组件引起死循环
     if 'last_audio_hash' not in st.session_state:
         st.session_state.last_audio_hash = None
 
-    # ------------------------------------------
-    # 首页视图
-    # ------------------------------------------
     if st.session_state.current_view == "landing":
         st.markdown(f"<h1 style='text-align: center;'>{T['title']}</h1>", unsafe_allow_html=True)
         st.write("") 
@@ -284,15 +272,11 @@ def main():
                 st.session_state.messages = []
                 st.rerun()
 
-    # ------------------------------------------
-    # Master 主线模式
-    # ------------------------------------------
     elif st.session_state.current_view == "master":
         st.sidebar.button("⬅️ Back", on_click=lambda: st.session_state.update({"current_view": "landing"}))
         unit = st.sidebar.selectbox("Unit", list(KNOWLEDGE_BASE.keys()), format_func=lambda x: KNOWLEDGE_BASE[x]["title"])
         st.header(f"{DRAGON_MASTER} - {KNOWLEDGE_BASE[unit]['title']}")
         
-        # 单元重置与抽题初始化
         if 'current_unit' not in st.session_state or st.session_state.current_unit != unit:
             st.session_state.current_unit = unit
             st.session_state.master_idx = 0
@@ -305,7 +289,6 @@ def main():
             st.session_state.pool_seed = int(time.time())
             st.session_state.last_audio_hash = None
             
-            # 1. 抽取翻译题 (分桶随机抽样算法)
             all_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
             target_count = 10
             sampled_questions = []
@@ -323,7 +306,6 @@ def main():
                 
             st.session_state.active_questions = sampled_questions
             
-            # 2. 组装终极防撞车问答池
             all_dialogues = KNOWLEDGE_BASE[unit].get("dialogues", [])
             raw_qa_pool = []
             seen_qa = set()
@@ -349,7 +331,6 @@ def main():
             random.shuffle(fallback_qa)
             
             final_qa_pool = (primary_qa + fallback_qa)[:5]
-            
             st.session_state.full_qa_pool = final_qa_pool
             qa_count = len(final_qa_pool)
             
@@ -368,9 +349,6 @@ def main():
         questions = st.session_state.active_questions
         total_q = len(questions)
         
-        # ------------------------------------------
-        # 阶段 1：翻译特训
-        # ------------------------------------------
         if st.session_state.master_mode == "training":
             current_q = st.session_state.master_idx
             
@@ -421,7 +399,6 @@ def main():
             with col_mic: 
                 audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_master")
             
-            # 音频死循环锁
             audio_hash = hash(audio_input['bytes']) if audio_input else None
             is_new_audio = audio_input and (audio_hash != st.session_state.last_audio_hash)
 
@@ -465,7 +442,6 @@ def main():
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
-                            # 【教学法升级】：区分“谁”和“其他疑问词”，并加入主语一致性要求
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, an enthusiastic, patient, and deeply encouraging HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". 
@@ -509,9 +485,6 @@ def main():
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
                 st.rerun()
 
-        # ------------------------------------------
-        # 阶段 2：智能实战问答池
-        # ------------------------------------------
         elif st.session_state.master_mode == "dialogue_pool":
             total_qa = len(st.session_state.qa_pool)
             is_class_dismissed = total_qa == 0 or st.session_state.qa_idx >= total_qa
@@ -536,7 +509,6 @@ def main():
                 else:
                     audio_input = None
             
-            # 音频死循环锁
             audio_hash = hash(audio_input['bytes']) if audio_input else None
             is_new_audio = audio_input and (audio_hash != st.session_state.last_audio_hash)
 
@@ -552,7 +524,6 @@ def main():
                 with st.spinner(T['analyzing']):
                     current_q_zh = get_question_text(st.session_state.qa_pool[st.session_state.qa_idx])
                     
-                    # 无菌语音室规则
                     da_longren_qa_prompt = f"""
                     You are {DRAGON_MASTER}, a warm, encouraging, and highly supportive HSK 1 grammar tutor conducting a Q&A test. 
                     You just asked the student: "{current_q_zh}"
@@ -593,7 +564,6 @@ def main():
                         st.session_state.qa_retry_count += 1
                         txt, aud = asyncio.run(handle_audio_logic(raw_ai_reply))
                         
-                        # 熔断机制：答错达到 3 次强制跳过
                         if st.session_state.qa_retry_count >= 3:
                             st.session_state.qa_retry_count = 0
                             st.session_state.qa_idx += 1
@@ -616,9 +586,6 @@ def main():
                         
                 st.rerun()
 
-    # ------------------------------------------
-    # 模式 2 & 3: 小龙人语伴与场景实战
-    # ------------------------------------------
     elif st.session_state.current_view in ["pal", "quest"]:
         st.sidebar.button("⬅️ Back", on_click=lambda: st.session_state.update({"current_view": "landing"}))
         st.sidebar.selectbox("HSK Level", ["HSK 1", "HSK 2", "HSK 3"])
@@ -659,7 +626,6 @@ def main():
         with col_mic:
             audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_pal")
             
-        # 切断旧语音伴随文字发送的幽灵 Bug
         audio_hash = hash(audio_input['bytes']) if audio_input else None
         is_new_audio = audio_input and (audio_hash != st.session_state.last_audio_hash)
 
@@ -676,7 +642,6 @@ def main():
                 system_prompt = f"当前身份是'{DRAGON_PAL}'，一个热情、幽默的中文语伴。请务必使用简单的 HSK 1 词汇。每次回复都要在最后加上 <audio>发音的中文句子</audio> 标签。"
             
             with st.spinner("Analyzing..."):
-                # 仅当 is_new_audio 为真时，才向大模型传输语音字节码
                 audio_bytes = audio_input['bytes'] if is_new_audio else None
                 raw_ai_reply = get_ai_response(st.session_state.messages, system_prompt, audio_bytes=audio_bytes)
                 txt, audio = asyncio.run(handle_audio_logic(raw_ai_reply))
