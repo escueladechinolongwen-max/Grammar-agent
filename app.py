@@ -37,7 +37,6 @@ SCENARIO_DB = {
     "🛒 Shopping": {"goal_en": "Buy clothes.", "goal_es": "Compra ropa.", "prompt": "现在的身份是服装店的老板。请用HSK1词汇。第一句请说：'欢迎光临，你想买什么？'", "ai_start_zh": "欢迎光临，你想买什么？"}
 }
 
-# 【核心修复】：补齐了 scaffold_mw 和 scaffold_de 的多语言文本
 UI_TEXT = {
     "Español": {
         "title": "Aprendizaje de Chino AI",
@@ -92,10 +91,12 @@ def get_ai_response(messages_history, system_prompt="", audio_bytes=None):
     genai.configure(api_key=API_KEY)
     model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=system_prompt)
     
+    # 安全合并连续的 user/model 消息，防止 400 错误
     gemini_history = []
     for msg in messages_history[:-1]:
         role = "user" if msg["role"] == "user" else "model"
         content = msg["content"]
+        # 清除音频标签，防止大模型误读干扰
         content = re.sub(r'<audio[^>]*>.*?</audio>', '', content)
         
         if not gemini_history:
@@ -121,6 +122,7 @@ def get_ai_response(messages_history, system_prompt="", audio_bytes=None):
 # 3. 智能宽容判分、安全文本提取 & 音频引擎
 # ==========================================
 def get_question_text(q_item):
+    """安全提取问题文本，防 KeyError"""
     if isinstance(q_item, str):
         return q_item
     if isinstance(q_item, dict):
@@ -135,25 +137,35 @@ def get_question_text(q_item):
     return str(q_item)
 
 def get_foreign_text(q_item, lang_key):
+    """安全提取外语翻译文本"""
     if isinstance(q_item, dict):
         return q_item.get(lang_key, q_item.get("en", "Translate this"))
     return "Translate this"
 
 def is_translation_match(user_input, target):
+    """高级语感判分引擎：根据 HSK1 规则进行智能放行"""
     def clean(t):
         return re.sub(r'[^\w\u4e00-\u9fff]', '', t).strip()
 
     u_clean = clean(user_input)
     t_clean = clean(target)
 
+    # 1. 绝对一致直接放行
     if u_clean == t_clean:
         return True
 
+    # 2. 单复数/敬语等价 (你/你们/您/您们)
     u_temp = u_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     t_temp = t_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
+    
+    # 年龄提问等价处理
+    u_temp = u_temp.replace("多大了", "几岁").replace("几岁了", "几岁").replace("多大", "几岁")
+    t_temp = t_temp.replace("多大了", "几岁").replace("几岁了", "几岁").replace("多大", "几岁")
+    
     if u_temp == t_temp:
         return True
 
+    # 3. 亲属/场所“的”字精确豁免
     close_nouns = ["妈妈", "爸爸", "哥哥", "姐姐", "弟弟", "妹妹", "朋友", "家", "学校", "老师", "名字"]
     u_de = u_temp
     t_de = t_temp
@@ -163,10 +175,18 @@ def is_translation_match(user_input, target):
     if u_de == t_de:
         return True
 
+    # 4. 日期/时间语境下的等价与“是/了”字豁免
     u_time = u_de.replace("哪天", "几号")
     t_time = t_de.replace("哪天", "几号")
-    date_keywords = ["月", "号", "日", "星期", "今天", "明天", "昨天", "今年", "明年", "去年", "几"]
     
+    # 时态词白名单，自动剥离“了”
+    if any(k in t_time for k in ["岁", "今年", "现在", "几岁"]):
+        u_time = u_time.replace("了", "")
+        t_time = t_time.replace("了", "")
+        if u_time == t_time:
+            return True
+
+    date_keywords = ["月", "号", "日", "星期", "今天", "明天", "昨天", "今年", "明年", "去年", "几"]
     if any(k in t_time for k in date_keywords):
         u_shi = u_time.replace("是", "")
         t_shi = t_time.replace("是", "")
@@ -176,34 +196,41 @@ def is_translation_match(user_input, target):
     return False
 
 def apply_scaffolding(student_input, target_sentence, lang_dict):
+    # 特定题型不触发量词鹰架
     if "几" in student_input:
-        if any(keyword in student_input for keyword in ["几月", "几号", "星期几"]):
+        if any(keyword in student_input for keyword in ["几月", "几号", "星期几", "几岁"]):
             return True, ""
             
         mws = ["个", "口", "只", "本", "岁", "块", "件"]
         if not any(mw in student_input.split("几")[1][:2] for mw in mws if len(student_input.split("几")) > 1):
-            return False, lang_dict["scaffold_mw"]
+            return False, lang_dict.get("scaffold_mw", "💡 Hint: A measure word is needed after '几'.")
             
     if "的" in target_sentence and any(p in target_sentence for p in ["上", "下", "前", "后", "里"]):
         if "的" in student_input:
             for noun in ["书", "水果", "电脑", "猫", "狗", "衣服"]:
                 if noun in student_input and student_input.find(noun) < student_input.find("的"):
-                    return False, lang_dict["scaffold_de"]
+                    return False, lang_dict.get("scaffold_de", "💡 Hint: Position words attach directly to the noun.")
     return True, ""
 
 async def generate_tts_audio(text, voice_code="zh-CN-XiaoxiaoNeural"):
+    # 增加随机数防止缓存冲突
     output_file = f"temp_audio_{int(time.time())}_{random.randint(100,999)}.mp3"
     communicate = edge_tts.Communicate(text, voice_code)
     await communicate.save(output_file)
     return output_file
 
 async def handle_audio_logic(full_response):
+    # 精准剥离 <audio> 标签用于渲染组件
     clean_text = re.sub(r'<audio[^>]*>.*?</audio>', '', full_response, flags=re.DOTALL).strip()
     audio_match = re.search(r'<audio[^>]*>(.*?)</audio>', full_response, flags=re.DOTALL)
     
     if audio_match:
-        audio_path = await generate_tts_audio(audio_match.group(1))
-        return clean_text, audio_path
+        raw_audio_text = audio_match.group(1)
+        # 彻底剥除大模型乱塞的 <source>、网址或各种 HTML 标签表情
+        safe_audio_text = re.sub(r'<[^>]+>', '', raw_audio_text).strip()
+        if safe_audio_text:
+            audio_path = await generate_tts_audio(safe_audio_text)
+            return clean_text, audio_path
     return clean_text, None
 
 # ==========================================
@@ -222,6 +249,7 @@ def main():
     T = UI_TEXT[ui_lang]
     lang_key = "es" if ui_lang == "Español" else "en"
 
+    # 全局状态初始化
     if 'current_view' not in st.session_state: 
         st.session_state.current_view = "landing"
     if 'messages' not in st.session_state: 
@@ -238,9 +266,13 @@ def main():
         st.session_state.consolidation_count = 0
     if 'asked_questions' not in st.session_state: 
         st.session_state.asked_questions = []
+    # 全局音频哈希锁，用于防止语音组件引起死循环
     if 'last_audio_hash' not in st.session_state:
         st.session_state.last_audio_hash = None
 
+    # ------------------------------------------
+    # 首页视图
+    # ------------------------------------------
     if st.session_state.current_view == "landing":
         st.markdown(f"<h1 style='text-align: center;'>{T['title']}</h1>", unsafe_allow_html=True)
         st.write("") 
@@ -272,11 +304,15 @@ def main():
                 st.session_state.messages = []
                 st.rerun()
 
+    # ------------------------------------------
+    # Master 主线模式
+    # ------------------------------------------
     elif st.session_state.current_view == "master":
         st.sidebar.button("⬅️ Back", on_click=lambda: st.session_state.update({"current_view": "landing"}))
         unit = st.sidebar.selectbox("Unit", list(KNOWLEDGE_BASE.keys()), format_func=lambda x: KNOWLEDGE_BASE[x]["title"])
         st.header(f"{DRAGON_MASTER} - {KNOWLEDGE_BASE[unit]['title']}")
         
+        # 单元重置与抽题初始化
         if 'current_unit' not in st.session_state or st.session_state.current_unit != unit:
             st.session_state.current_unit = unit
             st.session_state.master_idx = 0
@@ -289,7 +325,11 @@ def main():
             st.session_state.pool_seed = int(time.time())
             st.session_state.last_audio_hash = None
             
-            all_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
+            # 剔除“属什么”的超纲题
+            all_sentences_raw = KNOWLEDGE_BASE[unit].get("sentences", [])
+            all_sentences = [s for s in all_sentences_raw if "属" not in get_question_text(s)]
+            
+            # 1. 抽取翻译题 (分桶随机抽样算法)
             target_count = 10
             sampled_questions = []
             
@@ -306,7 +346,9 @@ def main():
                 
             st.session_state.active_questions = sampled_questions
             
-            all_dialogues = KNOWLEDGE_BASE[unit].get("dialogues", [])
+            # 2. 组装终极防撞车问答池
+            all_dialogues_raw = KNOWLEDGE_BASE[unit].get("dialogues", [])
+            all_dialogues = [d for d in all_dialogues_raw if "属" not in get_question_text(d)]
             raw_qa_pool = []
             seen_qa = set()
             
@@ -331,6 +373,7 @@ def main():
             random.shuffle(fallback_qa)
             
             final_qa_pool = (primary_qa + fallback_qa)[:5]
+            
             st.session_state.full_qa_pool = final_qa_pool
             qa_count = len(final_qa_pool)
             
@@ -349,11 +392,14 @@ def main():
         questions = st.session_state.active_questions
         total_q = len(questions)
         
+        # ------------------------------------------
+        # 阶段 1：翻译特训
+        # ------------------------------------------
         if st.session_state.master_mode == "training":
             current_q = st.session_state.master_idx
             
             st.progress(current_q / total_q if total_q > 0 else 0)
-            st.caption(f"{T['progress']}: {current_q}/{total_q}")
+            st.caption(f"{T.get('progress', 'Progress')}: {current_q}/{total_q}")
             
             if current_q >= total_q:
                 st.session_state.master_mode = "dialogue_pool"
@@ -395,10 +441,11 @@ def main():
             
             col_input, col_mic = st.columns([9, 1])
             with col_input: 
-                user_input_text = st.chat_input(T['input_placeholder'])
+                user_input_text = st.chat_input(T.get('input_placeholder', 'Type or use the mic...'))
             with col_mic: 
                 audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_master")
             
+            # 音频死循环锁
             audio_hash = hash(audio_input['bytes']) if audio_input else None
             is_new_audio = audio_input and (audio_hash != st.session_state.last_audio_hash)
 
@@ -406,7 +453,7 @@ def main():
                 user_text_clean = ""
                 if is_new_audio:
                     st.session_state.last_audio_hash = audio_hash
-                    with st.spinner(T['transcribing']):
+                    with st.spinner(T.get('transcribing', 'Transcribing audio...')):
                         transcribed_text = transcribe_audio_to_text(audio_input['bytes'])
                         st.session_state.messages.append({"role": "user", "content": f"🎤 {transcribed_text}"})
                         user_text_clean = transcribed_text
@@ -421,14 +468,14 @@ def main():
                     st.session_state.messages.append({"role": "assistant", "content": scaffold_msg, "audio": None})
                 else:
                     if is_translation_match(user_text_clean, target_zh):
-                        correct_response = f"{T['correct']} <audio>{target_zh}</audio>"
+                        correct_response = f"{T.get('correct', '✨ Perfect!')} <audio>{target_zh}</audio>"
                         txt, aud = asyncio.run(handle_audio_logic(correct_response))
                         st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
                         
                         if getattr(st.session_state, 'failed_current', False) and st.session_state.consolidation_count < 2:
                             all_unit_sentences = KNOWLEDGE_BASE[unit].get("sentences", [])
                             active_zhs = [get_question_text(q) for q in st.session_state.active_questions]
-                            remaining_pool = [q for q in all_unit_sentences if get_question_text(q) not in active_zhs]
+                            remaining_pool = [q for q in all_unit_sentences if get_question_text(q) not in active_zhs and "属" not in get_question_text(q)]
                             
                             if remaining_pool:
                                 st.session_state.consolidation_count += 1
@@ -441,7 +488,7 @@ def main():
                         st.session_state.failed_current = False
                     else:
                         st.session_state.failed_current = True
-                        with st.spinner(T['analyzing']):
+                        with st.spinner(T.get('analyzing', 'Analyzing...')):
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, an enthusiastic, patient, and deeply encouraging HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". 
@@ -454,17 +501,17 @@ def main():
                             
                             CRITICAL ALGORITHM (Analyze the student's actual input against the target):
                             1. DID THEY JUST USE THE WRONG CHARACTER/PRONOUN? (e.g., student inputted '他' instead of '她', or vice versa):
-                               - Gently point out the specific character mistake (e.g., "You got the structure and pronunciation perfectly right, but check the Chinese character for 'he/she/it'!" or similar).
+                               - Gently point out the specific character mistake.
                                - Stop generating immediately.
                                
-                            2. IS IT A "谁" (WHO) QUESTION? (e.g., Target contains "谁", like "他们是谁？", but student puts it at the front like "谁是他们？"):
+                            2. IS IT A "谁" (WHO) QUESTION? (e.g., Target contains "谁"):
                                - Say warmly in {ui_lang}: "Good try! In Chinese, even for questions, we stick to the simplest declarative structure: Subject + Verb + Object. The question word '谁' just sits in the Object position."
                                - Guide them to use this basic Subject + Verb + Object scaffold to fix their sentence.
                                - Stop generating immediately.
                                
-                            3. IS IT A QUESTION WITH "什么", "几", OR "哪"? (e.g. "什么是你的名字", "什么星期", "哪月"):
+                            3. IS IT A QUESTION WITH "什么", "几", OR "哪"? (e.g. "什么是你的名字", "哪月"):
                                - Say warmly in {ui_lang}: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the declarative answer to this question first."
-                               - Ask them to provide the declarative answer USING THE EXACT SAME SUBJECT PRONOUN as the target (e.g., if asking about '你们', ask them to translate 'You all are students', not 'We are students'). Wait for their reply.
+                               - Ask them to provide the declarative answer USING THE EXACT SAME SUBJECT PRONOUN as the target. Wait for their reply.
                                - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, replace the specific word with the correct question word."
                                - Stop generating immediately.
                                
@@ -478,13 +525,15 @@ def main():
                             5. NORMAL MISTAKES: Point out specifically what is missing or wrong based on their actual input OR give the basic grammar scaffold.
                             
                             6. STRICTEST RULE: NEVER give the full correct target sentence ("{target_zh}") directly in your response! NEVER! You must guide the student to correct their own input.
-                            7. DO NOT EXPLAIN OMISSIONS. DO NOT say "you can omit 是 or 的".
-                            8. DO NOT say goodbye or wrap up.
+                            7. DO NOT say goodbye or wrap up.
                             """
                             ai_feedback = get_ai_response(st.session_state.messages, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
                 st.rerun()
 
+        # ------------------------------------------
+        # 阶段 2：智能实战问答池
+        # ------------------------------------------
         elif st.session_state.master_mode == "dialogue_pool":
             total_qa = len(st.session_state.qa_pool)
             is_class_dismissed = total_qa == 0 or st.session_state.qa_idx >= total_qa
@@ -502,7 +551,7 @@ def main():
             
             col_input, col_mic = st.columns([9, 1])
             with col_input:
-                user_input = st.chat_input(T['input_placeholder'], disabled=is_class_dismissed)
+                user_input = st.chat_input(T.get('input_placeholder', 'Type or use the mic...'), disabled=is_class_dismissed)
             with col_mic:
                 if not is_class_dismissed:
                     audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_pool")
@@ -515,13 +564,13 @@ def main():
             if user_input or is_new_audio:
                 if is_new_audio:
                     st.session_state.last_audio_hash = audio_hash
-                    with st.spinner(T['transcribing']):
+                    with st.spinner(T.get('transcribing', 'Transcribing audio...')):
                         transcribed_text = transcribe_audio_to_text(audio_input['bytes'])
                         st.session_state.messages.append({"role": "user", "content": f"🎤 {transcribed_text}"})
                 else:
                     st.session_state.messages.append({"role": "user", "content": user_input})
                     
-                with st.spinner(T['analyzing']):
+                with st.spinner(T.get('analyzing', 'Analyzing...')):
                     current_q_zh = get_question_text(st.session_state.qa_pool[st.session_state.qa_idx])
                     
                     da_longren_qa_prompt = f"""
@@ -531,14 +580,14 @@ def main():
                     
                     LANGUAGE & TONE RULE:
                     1. You MUST speak to the student entirely in {ui_lang} for all instructions, praises, and feedback. ONLY output Chinese for the student's correct sentence in the <audio> tag. Do NOT explain grammar in Chinese.
-                    2. TONE: Be extremely positive and friendly! Use emojis (🎉, 👏, ✨, 💡) to celebrate their success and offer gentle encouragement if they make a mistake.
-                    3. CRITICAL AUDIO RULE: NEVER put emojis (like 💯, 🎉) or English punctuation inside the <audio> tag. The text-to-speech engine will read them out loudly as weird words. ONLY pure Chinese characters inside <audio>!
+                    2. TONE: Be extremely positive and friendly! Use emojis to celebrate their success.
+                    3. CRITICAL AUDIO FORMAT RULE: You MUST output EXACTLY <audio>中文句子</audio>. Do NOT put emojis, URLs, or HTML attributes like <source src="..."> inside the tag! The text-to-speech engine will literally read URLs out loud if you do!
                     
                     YOUR TASK:
                     1. Check if they are merely TRANSLATING. If they translated the question instead of answering it, tell them gently in {ui_lang}: "Oops! This is not a translation exercise. Please answer the question based on a real situation! 💡"
                     2. Check their ANSWER. If it makes logical sense as a response to "{current_q_zh}" and uses acceptable HSK1 grammar, you MUST include the exact secret flag "[PASS]" anywhere in the response. Praise them enthusiastically in {ui_lang} and output their correct sentence in <audio>.
                     3. If their answer is wrong or unnatural, comfort them, gently correct the grammar in {ui_lang} and ask them to try answering again. 
-                    4. DO NOT ASK THE NEXT QUESTION. The system handles the next question automatically.
+                    4. DO NOT ASK THE NEXT QUESTION. UNDER NO CIRCUMSTANCES should you invent or ask a follow-up question. You are only evaluating their answer. The system handles the next question automatically.
                     """
                     
                     raw_ai_reply = get_ai_response(st.session_state.messages, da_longren_qa_prompt)
@@ -586,12 +635,15 @@ def main():
                         
                 st.rerun()
 
+    # ------------------------------------------
+    # 模式 2 & 3: 小龙人语伴与场景实战
+    # ------------------------------------------
     elif st.session_state.current_view in ["pal", "quest"]:
         st.sidebar.button("⬅️ Back", on_click=lambda: st.session_state.update({"current_view": "landing"}))
         st.sidebar.selectbox("HSK Level", ["HSK 1", "HSK 2", "HSK 3"])
         
         is_quest = (st.session_state.current_view == "quest")
-        st.header(T['m3_title'] if is_quest else f"{DRAGON_PAL} - Friend Chat")
+        st.header(T.get('m3_title', 'Quest Mode') if is_quest else f"{DRAGON_PAL} - Friend Chat")
         
         if is_quest and not st.session_state.get('active_quest'):
             cols = st.columns(2)
@@ -622,7 +674,7 @@ def main():
             
         col_input, col_mic = st.columns([9, 1])
         with col_input:
-            user_input = st.chat_input(T['input_placeholder'])
+            user_input = st.chat_input(T.get('input_placeholder', 'Type...'))
         with col_mic:
             audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_pal")
             
@@ -641,7 +693,7 @@ def main():
             else:
                 system_prompt = f"当前身份是'{DRAGON_PAL}'，一个热情、幽默的中文语伴。请务必使用简单的 HSK 1 词汇。每次回复都要在最后加上 <audio>发音的中文句子</audio> 标签。"
             
-            with st.spinner("Analyzing..."):
+            with st.spinner(T.get('analyzing', 'Analyzing...')):
                 audio_bytes = audio_input['bytes'] if is_new_audio else None
                 raw_ai_reply = get_ai_response(st.session_state.messages, system_prompt, audio_bytes=audio_bytes)
                 txt, audio = asyncio.run(handle_audio_logic(raw_ai_reply))
