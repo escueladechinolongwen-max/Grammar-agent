@@ -465,6 +465,7 @@ def main():
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T['analyzing']):
+                            # 【教学法升级】：区分“谁”和“其他疑问词”，并加入主语一致性要求
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, an enthusiastic, patient, and deeply encouraging HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". 
@@ -480,25 +481,28 @@ def main():
                                - Gently point out the specific character mistake (e.g., "You got the structure and pronunciation perfectly right, but check the Chinese character for 'he/she/it'!" or similar).
                                - Stop generating immediately.
                                
-                            2. IS THE TARGET SENTENCE A QUESTION? (Check if "{target_zh}" contains a question mark or question words like 什么, 几, 哪).
-                               IF YES, AND you detect direct translation in their input (e.g. "什么是你的名字", "什么星期"):
-                               - Say warmly in {ui_lang}: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the declarative answer to this question first."
-                               - Ask them to provide the declarative answer (e.g., "My name is Lucia" or "Tomorrow is Tuesday"). Wait for their reply.
-                               - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, to form the question, replace the specific word (like the name or number) with the correct question word." 
+                            2. IS IT A "谁" (WHO) QUESTION? (e.g., Target contains "谁", like "他们是谁？", but student puts it at the front like "谁是他们？"):
+                               - Say warmly in {ui_lang}: "Good try! In Chinese, even for questions, we stick to the simplest declarative structure: Subject + Verb + Object. The question word '谁' just sits in the Object position."
+                               - Guide them to use this basic Subject + Verb + Object scaffold to fix their sentence.
                                - Stop generating immediately.
                                
-                            3. IS THE TARGET SENTENCE A STATEMENT? (e.g. Target is "我叫Lucia", but student says "我名字是Lucia").
+                            3. IS IT A QUESTION WITH "什么", "几", OR "哪"? (e.g. "什么是你的名字", "什么星期", "哪月"):
+                               - Say warmly in {ui_lang}: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the declarative answer to this question first."
+                               - Ask them to provide the declarative answer USING THE EXACT SAME SUBJECT PRONOUN as the target (e.g., if asking about '你们', ask them to translate 'You all are students', not 'We are students'). Wait for their reply.
+                               - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, replace the specific word with the correct question word."
+                               - Stop generating immediately.
+                               
+                            4. IS THE TARGET SENTENCE A STATEMENT? (e.g. Target is "我叫Lucia", but student says "我名字是Lucia"):
                                IF YES, AND you detect direct translation:
                                - Say warmly in {ui_lang}: "Good try! However, this is typical foreign language thinking. Let's look at the correct Chinese structure."
-                               - Provide the basic grammar structure scaffold (e.g., "In Chinese, to say 'My name is', we use Subject + 叫 + Name").
+                               - Provide the basic grammar structure scaffold.
                                - Gently ask them to try again.
                                - Stop generating immediately.
                                
-                            4. NORMAL MISTAKES: Point out specifically what is missing or wrong based on their actual input (e.g., "You forgot the word for 'teacher'") OR give the basic grammar scaffold.
+                            5. NORMAL MISTAKES: Point out specifically what is missing or wrong based on their actual input OR give the basic grammar scaffold.
                             
-                            5. STRICTEST RULE: NEVER give the full correct target sentence ("{target_zh}") directly in your response! NEVER! You must guide the student to correct their own input.
-                            6. DO NOT EXPLAIN OMISSIONS. DO NOT say "you can omit 是 or 的".
-                            7. DO NOT output internal commands like "SHUT UP AND WAIT".
+                            6. STRICTEST RULE: NEVER give the full correct target sentence ("{target_zh}") directly in your response! NEVER! You must guide the student to correct their own input.
+                            7. DO NOT EXPLAIN OMISSIONS. DO NOT say "you can omit 是 or 的".
                             8. DO NOT say goodbye or wrap up.
                             """
                             ai_feedback = get_ai_response(st.session_state.messages, da_longren_translation_prompt)
@@ -548,6 +552,7 @@ def main():
                 with st.spinner(T['analyzing']):
                     current_q_zh = get_question_text(st.session_state.qa_pool[st.session_state.qa_idx])
                     
+                    # 无菌语音室规则
                     da_longren_qa_prompt = f"""
                     You are {DRAGON_MASTER}, a warm, encouraging, and highly supportive HSK 1 grammar tutor conducting a Q&A test. 
                     You just asked the student: "{current_q_zh}"
@@ -556,6 +561,7 @@ def main():
                     LANGUAGE & TONE RULE:
                     1. You MUST speak to the student entirely in {ui_lang} for all instructions, praises, and feedback. ONLY output Chinese for the student's correct sentence in the <audio> tag. Do NOT explain grammar in Chinese.
                     2. TONE: Be extremely positive and friendly! Use emojis (🎉, 👏, ✨, 💡) to celebrate their success and offer gentle encouragement if they make a mistake.
+                    3. CRITICAL AUDIO RULE: NEVER put emojis (like 💯, 🎉) or English punctuation inside the <audio> tag. The text-to-speech engine will read them out loudly as weird words. ONLY pure Chinese characters inside <audio>!
                     
                     YOUR TASK:
                     1. Check if they are merely TRANSLATING. If they translated the question instead of answering it, tell them gently in {ui_lang}: "Oops! This is not a translation exercise. Please answer the question based on a real situation! 💡"
@@ -653,7 +659,7 @@ def main():
         with col_mic:
             audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_pal")
             
-        # 【核心修复】：切断旧语音伴随文字发送的幽灵 Bug
+        # 切断旧语音伴随文字发送的幽灵 Bug
         audio_hash = hash(audio_input['bytes']) if audio_input else None
         is_new_audio = audio_input and (audio_hash != st.session_state.last_audio_hash)
 
@@ -670,7 +676,7 @@ def main():
                 system_prompt = f"当前身份是'{DRAGON_PAL}'，一个热情、幽默的中文语伴。请务必使用简单的 HSK 1 词汇。每次回复都要在最后加上 <audio>发音的中文句子</audio> 标签。"
             
             with st.spinner("Analyzing..."):
-                # 【关键修复】：仅当 is_new_audio 为真时，才向大模型传输语音字节码
+                # 仅当 is_new_audio 为真时，才向大模型传输语音字节码
                 audio_bytes = audio_input['bytes'] if is_new_audio else None
                 raw_ai_reply = get_ai_response(st.session_state.messages, system_prompt, audio_bytes=audio_bytes)
                 txt, audio = asyncio.run(handle_audio_logic(raw_ai_reply))
