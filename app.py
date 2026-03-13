@@ -148,7 +148,7 @@ def is_translation_match(user_input, target):
     if u_clean == t_clean:
         return True
 
-    # 敬语单复数等价
+    # 单复数/敬语等价
     u_temp = u_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     t_temp = t_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     
@@ -160,9 +160,13 @@ def is_translation_match(user_input, target):
     u_temp = u_temp.replace("块钱", "块")
     t_temp = t_temp.replace("块钱", "块")
     
-    # 多少 + 量词 的豁免（“多少个” = “多少”）
+    # 多少 + 量词 豁免
     u_temp = re.sub(r'多少[个口只本块件]', '多少', u_temp)
     t_temp = re.sub(r'多少[个口只本块件]', '多少', t_temp)
+    
+    # 【新增修复2】：学 和 学习 完全等价
+    u_temp = u_temp.replace("学习", "学")
+    t_temp = t_temp.replace("学习", "学")
     
     if u_temp == t_temp:
         return True
@@ -185,6 +189,14 @@ def is_translation_match(user_input, target):
                 if u_de.replace(p + t_word, t_word + p) == t_de: return True
             if (t_word + p) in u_de:
                 if u_de.replace(t_word + p, p + t_word) == t_de: return True
+
+    # 【新增修复4】：主语补全豁免（原题无主语，学生加了合法主语，算对）
+    for p in ["你", "我", "他", "她", "你们", "我们", "他们", "她们"]:
+        if u_temp == p + t_temp: 
+            return True
+        # 如果原题以“在”开头（例如：在谁家学汉语），学生加了“你在”，放行！
+        if t_temp.startswith("在") and u_temp == t_temp.replace("在", p + "在", 1):
+            return True
 
     u_time = u_de.replace("哪天", "几号")
     t_time = t_de.replace("哪天", "几号")
@@ -330,7 +342,6 @@ def main():
             
             target_count = 10
             
-            # 严格等距抽样，保证绝对的由简入难顺序
             if len(all_sentences) <= target_count:
                 sampled_questions = list(all_sentences)
             else:
@@ -482,7 +493,6 @@ def main():
                         with st.spinner(T.get('analyzing', 'Analyzing...')):
                             current_context = st.session_state.messages[st.session_state.q_start_idx:]
                             
-                            # 【最终极无情模板化】：加入词汇白名单限制
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, an enthusiastic, patient, and deeply encouraging HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". 
@@ -491,24 +501,35 @@ def main():
                             
                             LANGUAGE & TONE RULE:
                             1. Speak to the student entirely in {ui_lang}. ONLY the target Chinese words/sentences should be in Simplified Chinese.
-                            2. TONE: Be gentle, friendly, enthusiastic, and deeply encouraging! Use emojis (🌟, 💪, 🎉). BUT keep your responses EXTREMELY SHORT, clear, and punchy. DO NOT write long paragraphs.
+                            2. TONE: Be gentle, friendly, enthusiastic, and deeply encouraging! Use emojis (🌟, 💪, 🎉). Keep your responses EXTREMELY SHORT, clear, and punchy.
                             3. VISUAL CLARITY: You MUST use heavy brackets 【 】 whenever you refer to specific Chinese words to replace or use.
                             
                             CRITICAL ALGORITHM (Check these conditions in order):
                             
-                            1. MISSING MEASURE WORD WITH THIS/THAT (这/那):
+                            0. MULTIPLE STRUCTURAL ERRORS (The 3-step Combo):
+                               IF the student's input has 2 or more distinct errors (e.g., missing measure word AND wrong position word AND foreign word order):
+                               - Output: "Great try! 🌟 But this sentence has a few typical errors (like measure words or word order). Let's use this ultimate formula: 【[Provide the correct structural formula here, e.g., Place + 有 + Noun]】. Can you try putting your words into this formula?"
+                               - Stop generating.
+
+                            1. ACTION AT A PLACE (Foreign Thinking):
+                               IF the target uses "Subject + 在 + Place + Verb" (e.g., 我在医院工作), but the student puts the place at the end (e.g., 我工作在医院):
+                               - Output: "Oops, this is foreign language thinking! 🌟 In Chinese, the location comes BEFORE the action."
+                               - Give the formula: 【Someone/Subject】 + 【在】 + 【Place】 + 【Verb/Action】.
+                               - Stop generating.
+
+                            2. MISSING MEASURE WORD WITH THIS/THAT (这/那):
                                IF the target has "这/那" + Measure Word + Noun, and the student wrote 这/那 + Noun:
                                - Output: "Great try! 🌟 But in Chinese, when we say 'this [noun]' or 'that [noun]', we MUST use a measure word."
                                - Give the formula: 【这 / 那】 + 【Measure Word】 + 【Noun】.
                                - Stop generating.
 
-                            2. PLACE + 有 + NOUN (There is/are...):
+                            3. PLACE + 有 + NOUN (There is/are...):
                                IF the target uses "Place + 有 + Noun", and the student wrote "Noun + 在 + Place":
                                - Output: "You are so close! 💪 To say 'There is/are [something] in [a place]', Chinese uses a special fixed structure."
                                - Give the formula: 【Place】 + 【有】 + 【Something/Someone】.
                                - Stop generating.
                             
-                            3. QUESTION WITH "什么", "做/干什么", "几", "哪", OR "谁的" (WHOSE):
+                            4. QUESTION WITH "什么", "做/干什么", "几", "哪", OR "谁的" (WHOSE):
                                IF the student puts the question word at the beginning (foreign word order):
                                - STEP A (If they haven't provided a simple declarative statement yet):
                                  You MUST output ONLY this exact format (translated to {ui_lang}):
@@ -518,23 +539,23 @@ def main():
                                - STEP B (If they already provided the statement, e.g., "我想吃米饭"):
                                  You MUST output ONLY this exact format (translated to {ui_lang}):
                                  "Excellent! 🎉 Now, let's replace 【[Old Subject]】 with 【[New Subject]】, and replace 【[Specific Word]】 with 【[Question Word]】!"
-                                 *CRITICAL FOR POINT 4 ("DO WHAT")*: If the target question is asking what to DO (做什么), you MUST instruct them to replace the action with 【做什么】 (e.g., replace 【吃米饭】 with 【做什么】). DO NOT just use 【什么】.
+                                 *CRITICAL FOR "DO WHAT"*: If asking what to DO (做什么), explicitly tell them to replace the action with 【做什么】, not just 【什么】.
                                  Stop generating.
 
-                            4. SIMPLE "谁" (WHO) QUESTION WITHOUT "的" (e.g. 他们是谁？):
+                            5. SIMPLE "谁" (WHO) QUESTION WITHOUT "的" (e.g. 他们是谁？):
                                - Output: "Good try! 🌟 In Chinese, even for questions, we stick to the simplest declarative structure: 【Subject】 + 【Verb】 + 【Object】. The question word 【谁】 just sits in the Object or Subject position."
                                - Stop generating.
                                
-                            5. TARGET IS A STATEMENT:
+                            6. TARGET IS A STATEMENT:
                                - Output: "Almost there! 💪 In Chinese, the structure is simpler: 【Subject】 + 【Verb】 + 【Object】 (e.g., 【我】 + 【叫】 + 【Lucia】)."
                                - Stop generating.
                                
-                            6. NORMAL MISTAKES (Wrong character, etc.):
+                            7. NORMAL MISTAKES (Wrong character, etc.):
                                - Point out the specific mistake using 【 】 warmly. Keep it to one short sentence.
                                - Note: Measure words are OPTIONAL after '多少'. Do NOT correct them if they just say '多少' + Noun without a measure word.
                             
-                            7. STRICTEST RULE 1: NEVER give the full correct target sentence ("{target_zh}") directly! NEVER! 
-                            8. STRICTEST RULE 2: NEVER output the exact phrase "✨ Perfect! You nailed it." or pretend the user passed if they failed. Only guide them to correct their mistake.
+                            8. STRICTEST RULE 1 (NO FORCED OMISSIONS): NEVER tell a student to omit a subject (like 你 or 我). Having a subject is ALWAYS correct in Chinese. If their subject is in the wrong place, guide them to move it (usually to the very beginning), but DO NOT tell them to delete it.
+                            9. STRICTEST RULE 2 (NO CHEATING): NEVER give the full correct target sentence ("{target_zh}") directly! NEVER output "✨ Perfect! You nailed it." or pretend the user passed if they failed.
                             """
                             ai_feedback = get_ai_response(current_context, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
