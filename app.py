@@ -148,10 +148,21 @@ def is_translation_match(user_input, target):
     if u_clean == t_clean:
         return True
 
+    # 敬语单复数等价
     u_temp = u_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     t_temp = t_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
+    
+    # 年龄提问等价
     u_temp = u_temp.replace("多大了", "几岁").replace("几岁了", "几岁").replace("多大", "几岁")
     t_temp = t_temp.replace("多大了", "几岁").replace("几岁了", "几岁").replace("多大", "几岁")
+    
+    # 块和块钱等价
+    u_temp = u_temp.replace("块钱", "块")
+    t_temp = t_temp.replace("块钱", "块")
+    
+    # 多少 + 量词 的豁免（“多少个” = “多少”）
+    u_temp = re.sub(r'多少[个口只本块件]', '多少', u_temp)
+    t_temp = re.sub(r'多少[个口只本块件]', '多少', t_temp)
     
     if u_temp == t_temp:
         return True
@@ -164,6 +175,16 @@ def is_translation_match(user_input, target):
         t_de = t_de.replace(f"的{noun}", noun)
     if u_de == t_de:
         return True
+
+    # 时态词倒装豁免
+    time_words = ["今天", "明天", "昨天", "今年", "明年", "去年", "上午", "下午", "晚上", "早上", "现在"]
+    pronouns = ["我", "你", "他", "她", "我们", "你们", "他们", "她们"]
+    for t_word in time_words:
+        for p in pronouns:
+            if (p + t_word) in u_de:
+                if u_de.replace(p + t_word, t_word + p) == t_de: return True
+            if (t_word + p) in u_de:
+                if u_de.replace(t_word + p, p + t_word) == t_de: return True
 
     u_time = u_de.replace("哪天", "几号")
     t_time = t_de.replace("哪天", "几号")
@@ -251,6 +272,10 @@ def main():
         st.session_state.asked_questions = []
     if 'last_audio_hash' not in st.session_state:
         st.session_state.last_audio_hash = None
+    if 'q_start_idx' not in st.session_state:
+        st.session_state.q_start_idx = 0
+    if 'qa_start_idx' not in st.session_state:
+        st.session_state.qa_start_idx = 0
 
     if st.session_state.current_view == "landing":
         st.markdown(f"<h1 style='text-align: center;'>{T['title']}</h1>", unsafe_allow_html=True)
@@ -304,18 +329,13 @@ def main():
             all_sentences = [s for s in all_sentences_raw if "属" not in get_question_text(s)]
             
             target_count = 10
-            sampled_questions = []
             
+            # 严格等距抽样，保证绝对的由简入难顺序
             if len(all_sentences) <= target_count:
                 sampled_questions = list(all_sentences)
             else:
-                bucket_size = len(all_sentences) / target_count
-                for i in range(target_count):
-                    start_idx = int(i * bucket_size)
-                    end_idx = int((i + 1) * bucket_size) if i < target_count - 1 else len(all_sentences)
-                    bucket = all_sentences[start_idx:end_idx]
-                    if bucket:
-                        sampled_questions.append(random.choice(bucket))
+                step = len(all_sentences) / target_count
+                sampled_questions = [all_sentences[int(i * step)] for i in range(target_count)]
                 
             st.session_state.active_questions = sampled_questions
             
@@ -360,6 +380,7 @@ def main():
                 welcome_msg = f"👋 **Hello! I am {DRAGON_MASTER}.**\n\nIn this class we'll review:\n\n{grammar_points}\n\n**Plan:**\n1. Translate {len(sampled_questions)} key sentences.\n2. If a mistake occurs, 1-2 extra sentences to consolidate.\n{qa_step}\n\n**Ready? (Start translating below!)**"
             
             st.session_state.messages = [{"role": "assistant", "content": welcome_msg, "audio": None}]
+            st.session_state.q_start_idx = len(st.session_state.messages)
         
         questions = st.session_state.active_questions
         total_q = len(questions)
@@ -395,6 +416,7 @@ def main():
                 
                 txt, aud = asyncio.run(handle_audio_logic(transition_msg))
                 st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
+                st.session_state.qa_start_idx = len(st.session_state.messages)
                 st.rerun()
             
             target_zh = get_question_text(questions[current_q])
@@ -454,9 +476,13 @@ def main():
                         
                         st.session_state.master_idx += 1 
                         st.session_state.failed_current = False
+                        st.session_state.q_start_idx = len(st.session_state.messages)
                     else:
                         st.session_state.failed_current = True
                         with st.spinner(T.get('analyzing', 'Analyzing...')):
+                            current_context = st.session_state.messages[st.session_state.q_start_idx:]
+                            
+                            # 【最终极无情模板化】：加入词汇白名单限制
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, an enthusiastic, patient, and deeply encouraging HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". 
@@ -465,48 +491,52 @@ def main():
                             
                             LANGUAGE & TONE RULE:
                             1. Speak to the student entirely in {ui_lang}. ONLY the target Chinese words/sentences should be in Simplified Chinese.
-                            2. TONE: Be warm, friendly, and encouraging using emojis (🌟, 💪, 🎉). BUT keep your responses EXTREMELY SHORT, clear, and punchy. DO NOT write long paragraphs.
+                            2. TONE: Be gentle, friendly, enthusiastic, and deeply encouraging! Use emojis (🌟, 💪, 🎉). BUT keep your responses EXTREMELY SHORT, clear, and punchy. DO NOT write long paragraphs.
                             3. VISUAL CLARITY: You MUST use heavy brackets 【 】 whenever you refer to specific Chinese words to replace or use.
                             
                             CRITICAL ALGORITHM (Check these conditions in order):
                             
                             1. MISSING MEASURE WORD WITH THIS/THAT (这/那):
-                               IF the target has "这/那" + Measure Word + Noun, and the student wrote 这/那 + Noun (e.g. 这学校):
+                               IF the target has "这/那" + Measure Word + Noun, and the student wrote 这/那 + Noun:
                                - Output: "Great try! 🌟 But in Chinese, when we say 'this [noun]' or 'that [noun]', we MUST use a measure word."
                                - Give the formula: 【这 / 那】 + 【Measure Word】 + 【Noun】.
                                - Stop generating.
 
                             2. PLACE + 有 + NOUN (There is/are...):
-                               IF the target uses "Place + 有 + Noun" (e.g. 学校里有学生), and the student wrote "Noun + 在 + Place":
+                               IF the target uses "Place + 有 + Noun", and the student wrote "Noun + 在 + Place":
                                - Output: "You are so close! 💪 To say 'There is/are [something] in [a place]', Chinese uses a special fixed structure."
                                - Give the formula: 【Place】 + 【有】 + 【Something/Someone】.
                                - Stop generating.
                             
                             3. QUESTION WITH "什么", "做/干什么", "几", "哪", OR "谁的" (WHOSE):
                                IF the student puts the question word at the beginning (foreign word order):
-                               - STEP A (If they haven't provided a simple statement yet):
-                                 Output exactly this logic in {ui_lang}: "🌟 Oops, this is foreign language thinking! Let's think of a simple answer together first. For example, how do you say: '[Insert a very simple 3-word English statement here, e.g. I want to eat rice]'?"
+                               - STEP A (If they haven't provided a simple declarative statement yet):
+                                 You MUST output ONLY this exact format (translated to {ui_lang}):
+                                 "🌟 Oops, this is foreign language thinking! Let's think of a simple answer together first. For example, how do you say: '[Insert a very simple English statement using the target verb + ONE OF THESE SPECIFIC NOUNS ONLY: rice, Chinese food, Spanish food, tea, Chinese tea, or Spanish tea]'?"
+                                 CRITICAL STRICT RULE: You MUST ONLY use the specific nouns listed above for your examples! NEVER use words like "water", "coffee", "apples", or "homework" unless they are in the original target sentence!
                                  Wait for their reply. Stop generating.
                                - STEP B (If they already provided the statement, e.g., "我想吃米饭"):
-                                 Output exactly this logic in {ui_lang}: "Excellent! 🎉 Now, let's replace 【[Old word, e.g. 我]】 with 【[New word, e.g. 你]】, and replace 【[Specific Word, e.g. 米饭]】 with 【[Question Word, e.g. 什么]】."
-                                 *CRITICAL FOR "DO WHAT"*: If asking what to DO (做什么), explicitly tell them to replace the action with 【做什么】, not just 【什么】.
+                                 You MUST output ONLY this exact format (translated to {ui_lang}):
+                                 "Excellent! 🎉 Now, let's replace 【[Old Subject]】 with 【[New Subject]】, and replace 【[Specific Word]】 with 【[Question Word]】!"
+                                 *CRITICAL FOR POINT 4 ("DO WHAT")*: If the target question is asking what to DO (做什么), you MUST instruct them to replace the action with 【做什么】 (e.g., replace 【吃米饭】 with 【做什么】). DO NOT just use 【什么】.
                                  Stop generating.
 
                             4. SIMPLE "谁" (WHO) QUESTION WITHOUT "的" (e.g. 他们是谁？):
                                - Output: "Good try! 🌟 In Chinese, even for questions, we stick to the simplest declarative structure: 【Subject】 + 【Verb】 + 【Object】. The question word 【谁】 just sits in the Object or Subject position."
                                - Stop generating.
                                
-                            5. TARGET IS A STATEMENT (e.g. Target is "我叫Lucia", but student says "我名字是Lucia"):
+                            5. TARGET IS A STATEMENT:
                                - Output: "Almost there! 💪 In Chinese, the structure is simpler: 【Subject】 + 【Verb】 + 【Object】 (e.g., 【我】 + 【叫】 + 【Lucia】)."
                                - Stop generating.
                                
                             6. NORMAL MISTAKES (Wrong character, etc.):
                                - Point out the specific mistake using 【 】 warmly. Keep it to one short sentence.
+                               - Note: Measure words are OPTIONAL after '多少'. Do NOT correct them if they just say '多少' + Noun without a measure word.
                             
-                            7. STRICTEST RULE: NEVER give the full correct target sentence ("{target_zh}") directly! NEVER! 
-                            8. DO NOT EXPLAIN OMISSIONS (like omitting 是 or 的).
+                            7. STRICTEST RULE 1: NEVER give the full correct target sentence ("{target_zh}") directly! NEVER! 
+                            8. STRICTEST RULE 2: NEVER output the exact phrase "✨ Perfect! You nailed it." or pretend the user passed if they failed. Only guide them to correct their mistake.
                             """
-                            ai_feedback = get_ai_response(st.session_state.messages, da_longren_translation_prompt)
+                            ai_feedback = get_ai_response(current_context, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
                 st.rerun()
 
@@ -549,6 +579,8 @@ def main():
                 with st.spinner(T.get('analyzing', 'Analyzing...')):
                     current_q_zh = get_question_text(st.session_state.qa_pool[st.session_state.qa_idx])
                     
+                    current_context = st.session_state.messages[st.session_state.qa_start_idx:]
+                    
                     da_longren_qa_prompt = f"""
                     You are {DRAGON_MASTER}, a warm, encouraging, and highly supportive HSK 1 grammar tutor conducting a Q&A test. 
                     You just asked the student: "{current_q_zh}"
@@ -557,16 +589,16 @@ def main():
                     LANGUAGE & TONE RULE:
                     1. You MUST speak to the student entirely in {ui_lang}. ONLY output Chinese for the student's correct sentence in the <audio> tag. Do NOT explain grammar in Chinese.
                     2. TONE: Be extremely positive and friendly! Use emojis to celebrate their success. Keep it concise.
-                    3. CRITICAL AUDIO FORMAT RULE: You MUST output EXACTLY <audio>中文句子</audio>. Do NOT put emojis, URLs, or HTML attributes like <source src="..."> inside the tag! The text-to-speech engine will literally read URLs out loud if you do!
+                    3. CRITICAL AUDIO FORMAT RULE: You MUST output EXACTLY <audio>中文句子</audio>. Do NOT put emojis, URLs, or HTML attributes like <source src="..."> inside the tag!
                     
                     YOUR TASK:
                     1. Check if they are merely TRANSLATING. If they translated the question instead of answering it, tell them gently: "Oops! This is not a translation exercise. Please answer the question based on a real situation! 💡"
                     2. Check their ANSWER. If it makes logical sense as a response to "{current_q_zh}" and uses acceptable HSK1 grammar, you MUST include the exact secret flag "[PASS]" anywhere in the response. Praise them enthusiastically in {ui_lang} and output their correct sentence in <audio>.
                     3. If their answer is wrong or unnatural, comfort them, gently correct the grammar in {ui_lang} and ask them to try answering again. 
-                    4. DO NOT ASK THE NEXT QUESTION. UNDER NO CIRCUMSTANCES should you invent or ask a follow-up question. You are only evaluating their answer. The system handles the next question automatically.
+                    4. DO NOT ASK THE NEXT QUESTION. UNDER NO CIRCUMSTANCES should you invent or ask a follow-up question.
                     """
                     
-                    raw_ai_reply = get_ai_response(st.session_state.messages, da_longren_qa_prompt)
+                    raw_ai_reply = get_ai_response(current_context, da_longren_qa_prompt)
                     
                     if "[PASS]" in raw_ai_reply:
                         st.session_state.qa_idx += 1
@@ -585,6 +617,7 @@ def main():
                             end_msg = "🎉 **恭喜完成所有难关，非常棒！**\n\n顺利完成了翻译和情景问答！这次课程到此结束，下课啦！希望能继续保持对中文的热情，下次再见！💪 <audio>恭喜攻克所有难关，下课啦！</audio>" if lang_key == "es" else "🎉 **Congratulations on overcoming all challenges, excellent work!**\n\nYou successfully finished the translation and Q&A! This class is now over. Hope you keep up your passion for Chinese, see you next time! 💪 <audio>恭喜攻克所有难关，下课啦！</audio>"
                             etxt, eaud = asyncio.run(handle_audio_logic(end_msg))
                             st.session_state.messages.append({"role": "assistant", "content": etxt, "audio": eaud})
+                        st.session_state.qa_start_idx = len(st.session_state.messages)
                     else:
                         st.session_state.qa_retry_count += 1
                         txt, aud = asyncio.run(handle_audio_logic(raw_ai_reply))
@@ -606,6 +639,8 @@ def main():
                                 end_msg = "🎉 **恭喜完成所有难关，非常棒！**\n\n顺利完成了翻译和情景问答！这次课程到此结束，下课啦！希望能继续保持对中文的热情，下次再见！💪 <audio>恭喜攻克所有难关，下课啦！</audio>" if lang_key == "es" else "🎉 **Congratulations on overcoming all challenges, excellent work!**\n\nYou successfully finished the translation and Q&A! This class is now over. Hope you keep up your passion for Chinese, see you next time! 💪 <audio>恭喜攻克所有难关，下课啦！</audio>"
                                 etxt, eaud = asyncio.run(handle_audio_logic(end_msg))
                                 st.session_state.messages.append({"role": "assistant", "content": etxt, "audio": eaud})
+                            
+                            st.session_state.qa_start_idx = len(st.session_state.messages)
                         else:
                             st.session_state.messages.append({"role": "assistant", "content": txt, "audio": aud})
                         
@@ -674,5 +709,4 @@ def main():
             st.rerun()
 
 if __name__ == "__main__":
-    main()     
-
+    main()
