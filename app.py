@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 import json
 import os
 import re
@@ -91,12 +91,10 @@ def get_ai_response(messages_history, system_prompt="", audio_bytes=None):
     genai.configure(api_key=API_KEY)
     model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=system_prompt)
     
-    # 安全合并连续的 user/model 消息，防止 400 错误
     gemini_history = []
     for msg in messages_history[:-1]:
         role = "user" if msg["role"] == "user" else "model"
         content = msg["content"]
-        # 清除音频标签，防止大模型误读干扰
         content = re.sub(r'<audio[^>]*>.*?</audio>', '', content)
         
         if not gemini_history:
@@ -122,7 +120,6 @@ def get_ai_response(messages_history, system_prompt="", audio_bytes=None):
 # 3. 智能宽容判分、安全文本提取 & 音频引擎
 # ==========================================
 def get_question_text(q_item):
-    """安全提取问题文本，防 KeyError"""
     if isinstance(q_item, str):
         return q_item
     if isinstance(q_item, dict):
@@ -137,35 +134,28 @@ def get_question_text(q_item):
     return str(q_item)
 
 def get_foreign_text(q_item, lang_key):
-    """安全提取外语翻译文本"""
     if isinstance(q_item, dict):
         return q_item.get(lang_key, q_item.get("en", "Translate this"))
     return "Translate this"
 
 def is_translation_match(user_input, target):
-    """高级语感判分引擎：根据 HSK1 规则进行智能放行"""
     def clean(t):
         return re.sub(r'[^\w\u4e00-\u9fff]', '', t).strip()
 
     u_clean = clean(user_input)
     t_clean = clean(target)
 
-    # 1. 绝对一致直接放行
     if u_clean == t_clean:
         return True
 
-    # 2. 单复数/敬语等价 (你/你们/您/您们)
     u_temp = u_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     t_temp = t_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
-    
-    # 年龄提问等价处理
     u_temp = u_temp.replace("多大了", "几岁").replace("几岁了", "几岁").replace("多大", "几岁")
     t_temp = t_temp.replace("多大了", "几岁").replace("几岁了", "几岁").replace("多大", "几岁")
     
     if u_temp == t_temp:
         return True
 
-    # 3. 亲属/场所“的”字精确豁免
     close_nouns = ["妈妈", "爸爸", "哥哥", "姐姐", "弟弟", "妹妹", "朋友", "家", "学校", "老师", "名字"]
     u_de = u_temp
     t_de = t_temp
@@ -175,11 +165,9 @@ def is_translation_match(user_input, target):
     if u_de == t_de:
         return True
 
-    # 4. 日期/时间语境下的等价与“是/了”字豁免
     u_time = u_de.replace("哪天", "几号")
     t_time = t_de.replace("哪天", "几号")
     
-    # 时态词白名单，自动剥离“了”
     if any(k in t_time for k in ["岁", "今年", "现在", "几岁"]):
         u_time = u_time.replace("了", "")
         t_time = t_time.replace("了", "")
@@ -196,7 +184,6 @@ def is_translation_match(user_input, target):
     return False
 
 def apply_scaffolding(student_input, target_sentence, lang_dict):
-    # 特定题型不触发量词鹰架
     if "几" in student_input:
         if any(keyword in student_input for keyword in ["几月", "几号", "星期几", "几岁"]):
             return True, ""
@@ -213,20 +200,17 @@ def apply_scaffolding(student_input, target_sentence, lang_dict):
     return True, ""
 
 async def generate_tts_audio(text, voice_code="zh-CN-XiaoxiaoNeural"):
-    # 增加随机数防止缓存冲突
     output_file = f"temp_audio_{int(time.time())}_{random.randint(100,999)}.mp3"
     communicate = edge_tts.Communicate(text, voice_code)
     await communicate.save(output_file)
     return output_file
 
 async def handle_audio_logic(full_response):
-    # 精准剥离 <audio> 标签用于渲染组件
     clean_text = re.sub(r'<audio[^>]*>.*?</audio>', '', full_response, flags=re.DOTALL).strip()
     audio_match = re.search(r'<audio[^>]*>(.*?)</audio>', full_response, flags=re.DOTALL)
     
     if audio_match:
         raw_audio_text = audio_match.group(1)
-        # 彻底剥除大模型乱塞的 <source>、网址或各种 HTML 标签表情
         safe_audio_text = re.sub(r'<[^>]+>', '', raw_audio_text).strip()
         if safe_audio_text:
             audio_path = await generate_tts_audio(safe_audio_text)
@@ -249,7 +233,6 @@ def main():
     T = UI_TEXT[ui_lang]
     lang_key = "es" if ui_lang == "Español" else "en"
 
-    # 全局状态初始化
     if 'current_view' not in st.session_state: 
         st.session_state.current_view = "landing"
     if 'messages' not in st.session_state: 
@@ -266,13 +249,9 @@ def main():
         st.session_state.consolidation_count = 0
     if 'asked_questions' not in st.session_state: 
         st.session_state.asked_questions = []
-    # 全局音频哈希锁，用于防止语音组件引起死循环
     if 'last_audio_hash' not in st.session_state:
         st.session_state.last_audio_hash = None
 
-    # ------------------------------------------
-    # 首页视图
-    # ------------------------------------------
     if st.session_state.current_view == "landing":
         st.markdown(f"<h1 style='text-align: center;'>{T['title']}</h1>", unsafe_allow_html=True)
         st.write("") 
@@ -304,15 +283,11 @@ def main():
                 st.session_state.messages = []
                 st.rerun()
 
-    # ------------------------------------------
-    # Master 主线模式
-    # ------------------------------------------
     elif st.session_state.current_view == "master":
         st.sidebar.button("⬅️ Back", on_click=lambda: st.session_state.update({"current_view": "landing"}))
         unit = st.sidebar.selectbox("Unit", list(KNOWLEDGE_BASE.keys()), format_func=lambda x: KNOWLEDGE_BASE[x]["title"])
         st.header(f"{DRAGON_MASTER} - {KNOWLEDGE_BASE[unit]['title']}")
         
-        # 单元重置与抽题初始化
         if 'current_unit' not in st.session_state or st.session_state.current_unit != unit:
             st.session_state.current_unit = unit
             st.session_state.master_idx = 0
@@ -325,11 +300,9 @@ def main():
             st.session_state.pool_seed = int(time.time())
             st.session_state.last_audio_hash = None
             
-            # 剔除“属什么”的超纲题
             all_sentences_raw = KNOWLEDGE_BASE[unit].get("sentences", [])
             all_sentences = [s for s in all_sentences_raw if "属" not in get_question_text(s)]
             
-            # 1. 抽取翻译题 (分桶随机抽样算法)
             target_count = 10
             sampled_questions = []
             
@@ -346,7 +319,6 @@ def main():
                 
             st.session_state.active_questions = sampled_questions
             
-            # 2. 组装终极防撞车问答池
             all_dialogues_raw = KNOWLEDGE_BASE[unit].get("dialogues", [])
             all_dialogues = [d for d in all_dialogues_raw if "属" not in get_question_text(d)]
             raw_qa_pool = []
@@ -392,9 +364,6 @@ def main():
         questions = st.session_state.active_questions
         total_q = len(questions)
         
-        # ------------------------------------------
-        # 阶段 1：翻译特训
-        # ------------------------------------------
         if st.session_state.master_mode == "training":
             current_q = st.session_state.master_idx
             
@@ -445,7 +414,6 @@ def main():
             with col_mic: 
                 audio_input = mic_recorder(start_prompt="🎤", stop_prompt="⏹️", key="mic_master")
             
-            # 音频死循环锁
             audio_hash = hash(audio_input['bytes']) if audio_input else None
             is_new_audio = audio_input and (audio_hash != st.session_state.last_audio_hash)
 
@@ -497,43 +465,51 @@ def main():
                             
                             LANGUAGE & TONE RULE:
                             1. Speak to the student entirely in {ui_lang}. ONLY the target Chinese words/sentences should be in Simplified Chinese.
-                            2. TONE: Be warm and supportive! Use encouraging phrases like "Don't worry!", "You are so close!", or "Great try!" and add friendly emojis.
+                            2. TONE: Be warm, friendly, and encouraging using emojis (🌟, 💪, 🎉). BUT keep your responses EXTREMELY SHORT, clear, and punchy. DO NOT write long paragraphs.
+                            3. VISUAL CLARITY: You MUST use heavy brackets 【 】 whenever you refer to specific Chinese words to replace or use.
                             
-                            CRITICAL ALGORITHM (Analyze the student's actual input against the target):
-                            1. DID THEY JUST USE THE WRONG CHARACTER/PRONOUN? (e.g., student inputted '他' instead of '她', or vice versa):
-                               - Gently point out the specific character mistake.
-                               - Stop generating immediately.
-                               
-                            2. IS IT A QUESTION WITH "谁的" (WHOSE), "什么" (WHAT), "几" (HOW MANY), OR "哪" (WHICH)? (e.g. Target contains "谁的", "什么", "几", "哪"):
-                               - Say warmly in {ui_lang}: "This is typical foreign language thinking. Let's switch to Chinese thinking. Let's think about the declarative answer to this question first."
-                               - Ask them to provide the declarative answer USING THE EXACT SAME SUBJECT PRONOUN as the target. Wait for their reply.
-                               - Once they provide the declarative answer, explicitly guide them: "Excellent! Now, replace the specific word with the correct question word."
-                               - Stop generating immediately.
+                            CRITICAL ALGORITHM (Check these conditions in order):
+                            
+                            1. MISSING MEASURE WORD WITH THIS/THAT (这/那):
+                               IF the target has "这/那" + Measure Word + Noun, and the student wrote 这/那 + Noun (e.g. 这学校):
+                               - Output: "Great try! 🌟 But in Chinese, when we say 'this [noun]' or 'that [noun]', we MUST use a measure word."
+                               - Give the formula: 【这 / 那】 + 【Measure Word】 + 【Noun】.
+                               - Stop generating.
 
-                            3. IS IT A SIMPLE "谁" (WHO) QUESTION WITHOUT "的"? (e.g., Target contains "谁" but NOT "谁的", like "他们是谁？"):
-                               - Say warmly in {ui_lang}: "Good try! In Chinese, even for questions, we stick to the simplest declarative structure: Subject + Verb + Object. The question word '谁' just sits in the Object or Subject position."
-                               - Guide them to use this basic Subject + Verb + Object scaffold to fix their sentence.
-                               - Stop generating immediately.
-                               
-                            4. IS THE TARGET SENTENCE A STATEMENT? (e.g. Target is "我叫Lucia", but student says "我名字是Lucia"):
-                               IF YES, AND you detect direct translation:
-                               - Say warmly in {ui_lang}: "Good try! However, this is typical foreign language thinking. Let's look at the correct Chinese structure."
-                               - Provide the basic grammar structure scaffold.
-                               - Gently ask them to try again.
-                               - Stop generating immediately.
-                               
-                            5. NORMAL MISTAKES: Point out specifically what is missing or wrong based on their actual input OR give the basic grammar scaffold.
+                            2. PLACE + 有 + NOUN (There is/are...):
+                               IF the target uses "Place + 有 + Noun" (e.g. 学校里有学生), and the student wrote "Noun + 在 + Place":
+                               - Output: "You are so close! 💪 To say 'There is/are [something] in [a place]', Chinese uses a special fixed structure."
+                               - Give the formula: 【Place】 + 【有】 + 【Something/Someone】.
+                               - Stop generating.
                             
-                            6. STRICTEST RULE: NEVER give the full correct target sentence ("{target_zh}") directly in your response! NEVER! You must guide the student to correct their own input.
-                            7. DO NOT say goodbye or wrap up.
+                            3. QUESTION WITH "什么", "做/干什么", "几", "哪", OR "谁的" (WHOSE):
+                               IF the student puts the question word at the beginning (foreign word order):
+                               - STEP A (If they haven't provided a simple statement yet):
+                                 Output exactly this logic in {ui_lang}: "🌟 Oops, this is foreign language thinking! Let's think of a simple answer together first. For example, how do you say: '[Insert a very simple 3-word English statement here, e.g. I want to eat rice]'?"
+                                 Wait for their reply. Stop generating.
+                               - STEP B (If they already provided the statement, e.g., "我想吃米饭"):
+                                 Output exactly this logic in {ui_lang}: "Excellent! 🎉 Now, let's replace 【[Old word, e.g. 我]】 with 【[New word, e.g. 你]】, and replace 【[Specific Word, e.g. 米饭]】 with 【[Question Word, e.g. 什么]】."
+                                 *CRITICAL FOR "DO WHAT"*: If asking what to DO (做什么), explicitly tell them to replace the action with 【做什么】, not just 【什么】.
+                                 Stop generating.
+
+                            4. SIMPLE "谁" (WHO) QUESTION WITHOUT "的" (e.g. 他们是谁？):
+                               - Output: "Good try! 🌟 In Chinese, even for questions, we stick to the simplest declarative structure: 【Subject】 + 【Verb】 + 【Object】. The question word 【谁】 just sits in the Object or Subject position."
+                               - Stop generating.
+                               
+                            5. TARGET IS A STATEMENT (e.g. Target is "我叫Lucia", but student says "我名字是Lucia"):
+                               - Output: "Almost there! 💪 In Chinese, the structure is simpler: 【Subject】 + 【Verb】 + 【Object】 (e.g., 【我】 + 【叫】 + 【Lucia】)."
+                               - Stop generating.
+                               
+                            6. NORMAL MISTAKES (Wrong character, etc.):
+                               - Point out the specific mistake using 【 】 warmly. Keep it to one short sentence.
+                            
+                            7. STRICTEST RULE: NEVER give the full correct target sentence ("{target_zh}") directly! NEVER! 
+                            8. DO NOT EXPLAIN OMISSIONS (like omitting 是 or 的).
                             """
                             ai_feedback = get_ai_response(st.session_state.messages, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
                 st.rerun()
 
-        # ------------------------------------------
-        # 阶段 2：智能实战问答池
-        # ------------------------------------------
         elif st.session_state.master_mode == "dialogue_pool":
             total_qa = len(st.session_state.qa_pool)
             is_class_dismissed = total_qa == 0 or st.session_state.qa_idx >= total_qa
@@ -579,12 +555,12 @@ def main():
                     The student replied with the latest message.
                     
                     LANGUAGE & TONE RULE:
-                    1. You MUST speak to the student entirely in {ui_lang} for all instructions, praises, and feedback. ONLY output Chinese for the student's correct sentence in the <audio> tag. Do NOT explain grammar in Chinese.
-                    2. TONE: Be extremely positive and friendly! Use emojis to celebrate their success.
+                    1. You MUST speak to the student entirely in {ui_lang}. ONLY output Chinese for the student's correct sentence in the <audio> tag. Do NOT explain grammar in Chinese.
+                    2. TONE: Be extremely positive and friendly! Use emojis to celebrate their success. Keep it concise.
                     3. CRITICAL AUDIO FORMAT RULE: You MUST output EXACTLY <audio>中文句子</audio>. Do NOT put emojis, URLs, or HTML attributes like <source src="..."> inside the tag! The text-to-speech engine will literally read URLs out loud if you do!
                     
                     YOUR TASK:
-                    1. Check if they are merely TRANSLATING. If they translated the question instead of answering it, tell them gently in {ui_lang}: "Oops! This is not a translation exercise. Please answer the question based on a real situation! 💡"
+                    1. Check if they are merely TRANSLATING. If they translated the question instead of answering it, tell them gently: "Oops! This is not a translation exercise. Please answer the question based on a real situation! 💡"
                     2. Check their ANSWER. If it makes logical sense as a response to "{current_q_zh}" and uses acceptable HSK1 grammar, you MUST include the exact secret flag "[PASS]" anywhere in the response. Praise them enthusiastically in {ui_lang} and output their correct sentence in <audio>.
                     3. If their answer is wrong or unnatural, comfort them, gently correct the grammar in {ui_lang} and ask them to try answering again. 
                     4. DO NOT ASK THE NEXT QUESTION. UNDER NO CIRCUMSTANCES should you invent or ask a follow-up question. You are only evaluating their answer. The system handles the next question automatically.
@@ -635,9 +611,6 @@ def main():
                         
                 st.rerun()
 
-    # ------------------------------------------
-    # 模式 2 & 3: 小龙人语伴与场景实战
-    # ------------------------------------------
     elif st.session_state.current_view in ["pal", "quest"]:
         st.sidebar.button("⬅️ Back", on_click=lambda: st.session_state.update({"current_view": "landing"}))
         st.sidebar.selectbox("HSK Level", ["HSK 1", "HSK 2", "HSK 3"])
@@ -701,4 +674,4 @@ def main():
             st.rerun()
 
 if __name__ == "__main__":
-    main()
+    main()     
