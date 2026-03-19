@@ -148,7 +148,7 @@ def is_translation_match(user_input, target):
     if u_clean == t_clean:
         return True
 
-    # 单复数/敬语等价
+    # 敬语单复数等价
     u_temp = u_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     t_temp = t_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     
@@ -164,7 +164,7 @@ def is_translation_match(user_input, target):
     u_temp = re.sub(r'多少[个口只本块件]', '多少', u_temp)
     t_temp = re.sub(r'多少[个口只本块件]', '多少', t_temp)
     
-    # 【新增修复2】：学 和 学习 完全等价
+    # 学习 = 学
     u_temp = u_temp.replace("学习", "学")
     t_temp = t_temp.replace("学习", "学")
     
@@ -190,11 +190,10 @@ def is_translation_match(user_input, target):
             if (t_word + p) in u_de:
                 if u_de.replace(t_word + p, p + t_word) == t_de: return True
 
-    # 【新增修复4】：主语补全豁免（原题无主语，学生加了合法主语，算对）
+    # 主语补全豁免
     for p in ["你", "我", "他", "她", "你们", "我们", "他们", "她们"]:
         if u_temp == p + t_temp: 
             return True
-        # 如果原题以“在”开头（例如：在谁家学汉语），学生加了“你在”，放行！
         if t_temp.startswith("在") and u_temp == t_temp.replace("在", p + "在", 1):
             return True
 
@@ -233,6 +232,7 @@ def apply_scaffolding(student_input, target_sentence, lang_dict):
     return True, ""
 
 async def generate_tts_audio(text, voice_code="zh-CN-XiaoxiaoNeural"):
+    # 强制击穿浏览器音频缓存
     output_file = f"temp_audio_{int(time.time())}_{random.randint(100,999)}.mp3"
     communicate = edge_tts.Communicate(text, voice_code)
     await communicate.save(output_file)
@@ -288,6 +288,8 @@ def main():
         st.session_state.q_start_idx = 0
     if 'qa_start_idx' not in st.session_state:
         st.session_state.qa_start_idx = 0
+    if 'pool_seed' not in st.session_state:
+        st.session_state.pool_seed = int(time.time())
 
     if st.session_state.current_view == "landing":
         st.markdown(f"<h1 style='text-align: center;'>{T['title']}</h1>", unsafe_allow_html=True)
@@ -493,6 +495,7 @@ def main():
                         with st.spinner(T.get('analyzing', 'Analyzing...')):
                             current_context = st.session_state.messages[st.session_state.q_start_idx:]
                             
+                            # 【核心重构：第一人称自然回答逆推法】
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, an enthusiastic, patient, and deeply encouraging HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". 
@@ -501,7 +504,7 @@ def main():
                             
                             LANGUAGE & TONE RULE:
                             1. Speak to the student entirely in {ui_lang}. ONLY the target Chinese words/sentences should be in Simplified Chinese.
-                            2. TONE: Be gentle, friendly, enthusiastic, and deeply encouraging! Use emojis (🌟, 💪, 🎉). Keep your responses EXTREMELY SHORT, clear, and punchy.
+                            2. TONE: Be gentle, friendly, enthusiastic, and deeply encouraging! Use emojis (🌟, 💪, 🎉). BUT keep your responses EXTREMELY SHORT, clear, and punchy. DO NOT write long paragraphs.
                             3. VISUAL CLARITY: You MUST use heavy brackets 【 】 whenever you refer to specific Chinese words to replace or use.
                             
                             CRITICAL ALGORITHM (Check these conditions in order):
@@ -512,7 +515,7 @@ def main():
                                - Stop generating.
 
                             1. ACTION AT A PLACE (Foreign Thinking):
-                               IF the target uses "Subject + 在 + Place + Verb" (e.g., 我在医院工作), but the student puts the place at the end (e.g., 我工作在医院):
+                               IF the target uses "Subject + 在 + Place + Verb", but the student puts the place at the end (e.g., 我工作在医院):
                                - Output: "Oops, this is foreign language thinking! 🌟 In Chinese, the location comes BEFORE the action."
                                - Give the formula: 【Someone/Subject】 + 【在】 + 【Place】 + 【Verb/Action】.
                                - Stop generating.
@@ -532,13 +535,17 @@ def main():
                             4. QUESTION WITH "什么", "做/干什么", "几", "哪", OR "谁的" (WHOSE):
                                IF the student puts the question word at the beginning (foreign word order):
                                - STEP A (If they haven't provided a simple declarative statement yet):
-                                 You MUST output ONLY this exact format (translated to {ui_lang}):
-                                 "🌟 Oops, this is foreign language thinking! Let's think of a simple answer together first. For example, how do you say: '[Insert a very simple English statement using the target verb + ONE OF THESE SPECIFIC NOUNS ONLY: rice, Chinese food, Spanish food, tea, Chinese tea, or Spanish tea]'?"
-                                 CRITICAL STRICT RULE: You MUST ONLY use the specific nouns listed above for your examples! NEVER use words like "water", "coffee", "apples", or "homework" unless they are in the original target sentence!
+                                 You MUST output exactly this logic in {ui_lang}: "🌟 Oops, this is foreign language thinking! Let's think of a natural declarative answer to THIS sentence first. For example, how do you say: '[Insert an English declarative sentence answering the target question from a 1st-person perspective]?'"
+                                 CRITICAL LOGIC RULE FOR YOUR EXAMPLE:
+                                 - Change 2nd person pronouns (you/your) from the target question to 1st person (I/my) for the answer.
+                                 - If the target asks 哪国, answer with 中国 (e.g. Target: "Which country is your son's computer from?", Example: "My son's computer is Chinese.").
+                                 - If the target asks 谁的, answer with 我的 (e.g. Target: "Whose book is under the chair?", Example: "My book is under the chair.").
+                                 - If the target asks 几, answer with 三 (e.g. Target: "How many cups do you have?", Example: "I have three cups.").
+                                 - If the target asks 什么, answer with 米饭 or 茶.
                                  Wait for their reply. Stop generating.
-                               - STEP B (If they already provided the statement, e.g., "我想吃米饭"):
-                                 You MUST output ONLY this exact format (translated to {ui_lang}):
-                                 "Excellent! 🎉 Now, let's replace 【[Old Subject]】 with 【[New Subject]】, and replace 【[Specific Word]】 with 【[Question Word]】!"
+                                 
+                               - STEP B (If they already provided the statement, e.g., "我儿子的电脑是中国的"):
+                                 You MUST output exactly this logic in {ui_lang}: "Excellent! 🎉 Now, let's turn it back into the question! Keep the exact same word order, but replace the answer word 【[e.g., 中国 / 三 / 我的]】 with the question word 【[Target Question Word, e.g., 哪国 / 几 / 谁的]】! (Also remember to change 【我/我的】 back to 【你/你的】 if needed for the final question)."
                                  *CRITICAL FOR "DO WHAT"*: If asking what to DO (做什么), explicitly tell them to replace the action with 【做什么】, not just 【什么】.
                                  Stop generating.
 
