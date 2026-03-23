@@ -168,7 +168,13 @@ def is_translation_match(user_input, target):
     
     u_temp = u_temp.replace("菜", "饭")
     t_temp = t_temp.replace("菜", "饭")
-    
+
+    # 【核心修复】：复合句连词后的“冗余主语”极度宽容（如：但是我 -> 但是）
+    for p in ["我们", "你们", "他们", "她们", "我", "你", "他", "她"]:
+        for conj in ["但是", "可是", "然后", "所以"]:
+            u_temp = u_temp.replace(f"{conj}{p}", conj)
+            t_temp = t_temp.replace(f"{conj}{p}", conj)
+
     if u_temp == t_temp:
         return True
 
@@ -492,6 +498,7 @@ def main():
                         with st.spinner(T.get('analyzing', 'Analyzing...')):
                             current_context = st.session_state.messages[st.session_state.q_start_idx:]
                             
+                            # 【核心修复】：加入防假通关（Anti-False-Praise）协议，粉碎夸夸群死锁。
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, an enthusiastic, patient, and deeply encouraging HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". 
@@ -500,7 +507,7 @@ def main():
                             
                             LANGUAGE & TONE RULE:
                             1. Speak to the student entirely in {ui_lang}. ONLY the target Chinese words/sentences should be in Simplified Chinese.
-                            2. TONE: Be gentle, friendly, enthusiastic, and deeply encouraging! Use emojis (🌟, 💪, 🎉). BUT keep your responses EXTREMELY SHORT, clear, and punchy (unless answering a grammar question).
+                            2. TONE: Be gentle, friendly, enthusiastic, and deeply encouraging! Use emojis. BUT keep your responses EXTREMELY SHORT, clear, and punchy.
                             3. VISUAL CLARITY: You MUST use heavy brackets 【 】 whenever you refer to specific Chinese words to replace or use.
                             
                             CRITICAL ALGORITHM (Check these conditions in order):
@@ -578,13 +585,20 @@ def main():
                             11. TARGET IS A STATEMENT:
                                - Output: "Almost there! 💪 In Chinese, the structure is simpler: 【Subject】 + 【Verb】 + 【Object】 (e.g., 【我】 + 【叫】 + 【Lucia】)."
                                - Stop generating.
+
+                            12. PERFECT CHINESE BUT SYSTEM MISMATCH (The False Praise Trap):
+                               If the student's input "{user_text_clean}" is grammatically flawless Chinese, but it doesn't exactly match "{target_zh}" (e.g., they added an extra pronoun like "我" after "但是", or used a slightly different but valid word):
+                               - Output: "Your sentence is totally natural and correct! 🎉 However, for this specific challenge, let's try it without the extra 【[Insert the extra word they used]】 (or: let's use 【[Target Word]】 instead). Can you try saying it again?"
+                               - Stop generating.
                                
-                            12. NORMAL MISTAKES (Wrong character, etc.):
+                            13. NORMAL MISTAKES (Wrong character, etc.):
                                - Point out the specific mistake using 【 】 warmly. Keep it to one short sentence.
                                - Note: Measure words are OPTIONAL after '多少'. Do NOT correct them if they just say '多少' + Noun without a measure word.
                             
-                            13. STRICTEST RULE 1 (NO FORCED OMISSIONS): NEVER tell a student to omit a subject (like 你 or 我). Having a subject is ALWAYS correct in Chinese. If their subject is in the wrong place, guide them to move it (usually to the very beginning), but DO NOT tell them to delete it.
-                            14. STRICTEST RULE 2 (NO CHEATING): NEVER give the full correct target sentence ("{target_zh}") directly! NEVER output "✨ Perfect! You nailed it." or pretend the user passed if they failed.
+                            14. STRICTEST RULE 1 (NO FORCED OMISSIONS): NEVER tell a student to omit a subject (like 你 or 我). Having a subject is ALWAYS correct in Chinese. If their subject is in the wrong place, guide them to move it (usually to the very beginning), but DO NOT tell them to delete it.
+                            
+                            15. STRICTEST RULE 2 (NO FALSE PASS - ANTI-FALSE-PRAISE PROTOCOL):
+                                Since you are generating a response, the student HAS FAILED the system's exact match check. You are strictly FORBIDDEN from saying "You absolutely got it!", "Perfect!", or giving any impression that they have fully passed this question. You MUST guide them to adjust their sentence to match "{target_zh}" using Rule 12 or point out the remaining error. NEVER output the full correct target sentence ("{target_zh}") directly!
                             """
                             ai_feedback = get_ai_response(current_context, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
