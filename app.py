@@ -206,7 +206,8 @@ def is_translation_match(user_input, target):
         if u_time == t_time:
             return True
 
-    date_keywords = ["月", "号", "日", "星期", "今天", "明天", "昨天", "今年", "明年", "去年", "几"]
+    # 包含时间、点、分词汇的“是”字豁免
+    date_keywords = ["月", "号", "日", "星期", "今天", "明天", "昨天", "今年", "明年", "去年", "几", "点", "分", "现在"]
     if any(k in t_time for k in date_keywords):
         u_shi = u_time.replace("是", "")
         t_shi = t_time.replace("是", "")
@@ -216,19 +217,23 @@ def is_translation_match(user_input, target):
     return False
 
 def apply_scaffolding(student_input, target_sentence, lang_dict):
+    # 1. 检查 "几" 后面是否漏了量词
     if "几" in student_input:
-        if any(keyword in student_input for keyword in ["几月", "几号", "星期几", "几岁"]):
-            return True, ""
-            
-        mws = ["个", "口", "只", "本", "岁", "块", "件"]
-        if not any(mw in student_input.split("几")[1][:2] for mw in mws if len(student_input.split("几")) > 1):
-            return False, lang_dict.get("scaffold_mw", "💡 Hint: A measure word is needed after '几'.")
-            
+        # 添加绝对豁免名单（包括几点、几分等本身无需额外量词的时间单位）
+        exemptions = ["几月", "几号", "几日", "星期几", "几岁", "几点", "几分", "几天", "几年", "几点钟"]
+        if not any(keyword in student_input for keyword in exemptions):
+            mws = ["个", "口", "只", "本", "岁", "块", "件", "瓶", "杯", "碗"]
+            parts = student_input.split("几")
+            if len(parts) > 1 and parts[1]:
+                if not any(mw in parts[1][:2] for mw in mws):
+                    return False, lang_dict.get("scaffold_mw", "💡 Hint: In Chinese, when asking 'how many' with '几', you usually need a measure word (like 个, 口, 本) right after it. Try again!")
+
+    # 2. 检查方位词是否误加了 "的"
     if "的" in target_sentence and any(p in target_sentence for p in ["上", "下", "前", "后", "里"]):
         if "的" in student_input:
-            for noun in ["书", "水果", "电脑", "猫", "狗", "衣服"]:
+            for noun in ["书", "水果", "电脑", "猫", "狗", "衣服", "桌子", "椅子", "杯子"]:
                 if noun in student_input and student_input.find(noun) < student_input.find("的"):
-                    return False, lang_dict.get("scaffold_de", "💡 Hint: Position words attach directly to the noun.")
+                    return False, lang_dict.get("scaffold_de", "💡 Hint: Position words (like 上/下/里) usually attach directly to the noun without '的'. Try again!")
     return True, ""
 
 async def generate_tts_audio(text, voice_code="zh-CN-XiaoxiaoNeural"):
@@ -495,7 +500,6 @@ def main():
                         with st.spinner(T.get('analyzing', 'Analyzing...')):
                             current_context = st.session_state.messages[st.session_state.q_start_idx:]
                             
-                            # 【核心重构：第一人称自然回答逆推法】
                             da_longren_translation_prompt = f"""
                             You are {DRAGON_MASTER}, an enthusiastic, patient, and deeply encouraging HSK 1 grammar tutor.
                             The student is translating: "{display_foreign}". 
@@ -538,14 +542,15 @@ def main():
                                  You MUST output exactly this logic in {ui_lang}: "🌟 Oops, this is foreign language thinking! Let's think of a natural declarative answer to THIS sentence first. For example, how do you say: '[Insert an English declarative sentence answering the target question from a 1st-person perspective]?'"
                                  CRITICAL LOGIC RULE FOR YOUR EXAMPLE:
                                  - Change 2nd person pronouns (you/your) from the target question to 1st person (I/my) for the answer.
-                                 - If the target asks 哪国, answer with 中国 (e.g. Target: "Which country is your son's computer from?", Example: "My son's computer is Chinese.").
-                                 - If the target asks 谁的, answer with 我的 (e.g. Target: "Whose book is under the chair?", Example: "My book is under the chair.").
-                                 - If the target asks 几, answer with 三 (e.g. Target: "How many cups do you have?", Example: "I have three cups.").
+                                 - If the target asks 哪国, answer with 中国.
+                                 - If the target asks 谁的, answer with 我的.
+                                 - If the target asks with 几 (including 几点, 几个, 几岁, 几分), answer using a simple number between 1 and 10 (like 一, 二, 三, 五, 八) (e.g., 五点, 三个, 八岁).
                                  - If the target asks 什么, answer with 米饭 or 茶.
                                  Wait for their reply. Stop generating.
                                  
-                               - STEP B (If they already provided the statement, e.g., "我儿子的电脑是中国的"):
-                                 You MUST output exactly this logic in {ui_lang}: "Excellent! 🎉 Now, let's turn it back into the question! Keep the exact same word order, but replace the answer word 【[e.g., 中国 / 三 / 我的]】 with the question word 【[Target Question Word, e.g., 哪国 / 几 / 谁的]】! (Also remember to change 【我/我的】 back to 【你/你的】 if needed for the final question)."
+                               - STEP B (If they already provided the statement):
+                                 You MUST output exactly this logic in {ui_lang}: "Excellent! 🎉 Now, let's turn it back into the question! Keep the exact same word order, but replace the answer word 【[e.g., 中国 / 我的 / 八]】 with the question word 【[Target Question Word, e.g., 哪国 / 谁的 / 几]】! (Also remember to change 【我/我的】 back to 【你/你的】 if needed for the final question)."
+                                 *CRITICAL EXCEPTION FOR "几"*: If the target uses 几 (e.g., 几点, 几个, 几岁), explicitly instruct them to ONLY replace the specific number they used (e.g., 【三】 or 【八】) with 【几】. Do NOT replace the unit/measure word (e.g., say "replace 【八】 with 【几】", NEVER say "replace 【八点】 with 【几点】").
                                  *CRITICAL FOR "DO WHAT"*: If asking what to DO (做什么), explicitly tell them to replace the action with 【做什么】, not just 【什么】.
                                  Stop generating.
 
