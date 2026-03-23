@@ -180,8 +180,8 @@ def is_translation_match(user_input, target):
     if u_de == t_de:
         return True
 
-    # 时态词倒装豁免
-    time_words = ["今天", "明天", "昨天", "今年", "明年", "去年", "上午", "下午", "晚上", "早上", "现在"]
+    # 时态词倒装豁免 (新增了什么时候、几点等疑问时间词)
+    time_words = ["今天", "明天", "昨天", "今年", "明年", "去年", "上午", "下午", "晚上", "早上", "现在", "什么时候", "几点", "几点钟", "哪天", "几号"]
     pronouns = ["我", "你", "他", "她", "我们", "你们", "他们", "她们"]
     for t_word in time_words:
         for p in pronouns:
@@ -536,7 +536,7 @@ def main():
                                - Give the formula: 【Place】 + 【有】 + 【Something/Someone】.
                                - Stop generating.
                             
-                            4. QUESTION WITH "什么", "做/干什么", "几", "哪", OR "谁的" (WHOSE):
+                            4. QUESTION WITH "什么", "做/干什么", "几", "哪", "什么时候" OR "谁的" (WHOSE):
                                IF the student puts the question word at the beginning (foreign word order):
                                - STEP A (If they haven't provided a simple declarative statement yet):
                                  You MUST output exactly this logic in {ui_lang}: "🌟 Oops, this is foreign language thinking! Let's think of a natural declarative answer to THIS sentence first. For example, how do you say: '[Insert an English declarative sentence answering the target question from a 1st-person perspective]?'"
@@ -545,11 +545,12 @@ def main():
                                  - If the target asks 哪国, answer with 中国.
                                  - If the target asks 谁的, answer with 我的.
                                  - If the target asks with 几 (including 几点, 几个, 几岁, 几分), answer using a simple number between 1 and 10 (like 一, 二, 三, 五, 八) (e.g., 五点, 三个, 八岁).
+                                 - If the target asks 什么时候, answer with 明天 or 今天.
                                  - If the target asks 什么, answer with 米饭 or 茶.
                                  Wait for their reply. Stop generating.
                                  
                                - STEP B (If they already provided the statement):
-                                 You MUST output exactly this logic in {ui_lang}: "Excellent! 🎉 Now, let's turn it back into the question! Keep the exact same word order, but replace the answer word 【[e.g., 中国 / 我的 / 八]】 with the question word 【[Target Question Word, e.g., 哪国 / 谁的 / 几]】! (Also remember to change 【我/我的】 back to 【你/你的】 if needed for the final question)."
+                                 You MUST output exactly this logic in {ui_lang}: "Excellent! 🎉 Now, let's turn it back into the question! Keep the exact same word order, but replace the answer word 【[e.g., 中国 / 我的 / 八 / 明天]】 with the question word 【[Target Question Word, e.g., 哪国 / 谁的 / 几 / 什么时候]】! (Also remember to change 【我/我的】 back to 【你/你的】 if needed for the final question)."
                                  *CRITICAL EXCEPTION FOR "几"*: If the target uses 几 (e.g., 几点, 几个, 几岁), explicitly instruct them to ONLY replace the specific number they used (e.g., 【三】 or 【八】) with 【几】. Do NOT replace the unit/measure word (e.g., say "replace 【八】 with 【几】", NEVER say "replace 【八点】 with 【几点】").
                                  *CRITICAL FOR "DO WHAT"*: If asking what to DO (做什么), explicitly tell them to replace the action with 【做什么】, not just 【什么】.
                                  Stop generating.
