@@ -145,38 +145,40 @@ def is_translation_match(user_input, target):
     u_clean = clean(user_input)
     t_clean = clean(target)
 
+    num_map = {
+        "0": "零", "1": "一", "2": "二", "3": "三", "4": "四", "5": "五", 
+        "6": "六", "7": "七", "8": "八", "9": "九", "10": "十",
+        "11": "十一", "12": "十二", "15": "十五", "20": "二十", "21": "二十一",
+        "30": "三十", "40": "四十", "50": "五十"
+    }
+    for arabic, chinese in num_map.items():
+        u_clean = u_clean.replace(arabic, chinese)
+        t_clean = t_clean.replace(arabic, chinese)
+
     if u_clean == t_clean:
         return True
 
-    # 敬语单复数等价
     u_temp = u_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     t_temp = t_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     
-    # 年龄提问等价
     u_temp = u_temp.replace("多大了", "几岁").replace("几岁了", "几岁").replace("多大", "几岁")
     t_temp = t_temp.replace("多大了", "几岁").replace("几岁了", "几岁").replace("多大", "几岁")
     
-    # 块和块钱等价
     u_temp = u_temp.replace("块钱", "块")
     t_temp = t_temp.replace("块钱", "块")
     
-    # 多少 + 量词 豁免
     u_temp = re.sub(r'多少[个口只本块件]', '多少', u_temp)
     t_temp = re.sub(r'多少[个口只本块件]', '多少', t_temp)
     
-    # 学习 = 学
     u_temp = u_temp.replace("学习", "学")
     t_temp = t_temp.replace("学习", "学")
     
-    # 一些 = 些
     u_temp = u_temp.replace("一些", "些")
     t_temp = t_temp.replace("一些", "些")
     
-    # 菜 = 饭
     u_temp = u_temp.replace("菜", "饭")
     t_temp = t_temp.replace("菜", "饭")
 
-    # 复合句连词后的“冗余主语”极度宽容（如：但是我 -> 但是）
     for p in ["我们", "你们", "他们", "她们", "我", "你", "他", "她"]:
         for conj in ["但是", "可是", "然后", "所以"]:
             u_temp = u_temp.replace(f"{conj}{p}", conj)
@@ -364,25 +366,35 @@ def main():
                 
             st.session_state.active_questions = sampled_questions
             
-            all_dialogues_raw = KNOWLEDGE_BASE[unit].get("dialogues", [])
-            all_dialogues = [d for d in all_dialogues_raw if "属" not in get_question_text(d)]
-            
             translation_texts = {get_question_text(q) for q in sampled_questions}
+            
+            def extract_questions(item):
+                qs = []
+                if isinstance(item, str):
+                    if ("？" in item or "?" in item) and re.search(r'[\u4e00-\u9fff]', item):
+                        qs.append(item)
+                elif isinstance(item, dict):
+                    for k, v in item.items():
+                        if k in ['en', 'es', 'pinyin', 'py']: continue
+                        qs.extend(extract_questions(v))
+                elif isinstance(item, list):
+                    for v in item:
+                        qs.extend(extract_questions(v))
+                return qs
+
+            all_possible_qs = extract_questions(KNOWLEDGE_BASE[unit])
             
             raw_qa_pool = []
             seen_qa = set()
             
-            for item in all_dialogues:
-                text = get_question_text(item)
-                if text not in seen_qa and text not in translation_texts:
-                    raw_qa_pool.append(item)
-                    seen_qa.add(text)
-                    
-            for item in all_sentences:
-                text = get_question_text(item)
-                if ("？" in text or "?" in text) and text not in seen_qa and text not in translation_texts:
-                    raw_qa_pool.append(item)
-                    seen_qa.add(text)
+            for q in all_possible_qs:
+                clean_q = re.sub(r'^[A-Za-z][:：]\s*', '', q).strip()
+                clean_q = re.sub(r'[@*~^#]', '', clean_q)
+                
+                if clean_q not in seen_qa and clean_q not in translation_texts:
+                    raw_qa_pool.append(clean_q)
+                    seen_qa.add(clean_q)
+                    seen_qa.add(q)
             
             random.seed(st.session_state.pool_seed)
             random.shuffle(raw_qa_pool)
@@ -521,57 +533,64 @@ def main():
                             1. META-QUESTIONS OR GRAMMAR QUESTIONS (e.g., "why?", "I don't know", answering an explanation):
                                IF the student asks a grammar question or asks for clarification:
                                - Output: Warmly and clearly EXPLAIN the grammar point they are asking about in {ui_lang}. Be a great and helpful teacher!
-                               - CRITICAL ACCURACY FOR "了": If they ask about "了", explain it based strictly on these rules: 1) To show an action is finished, '了' goes at the end of the sentence (e.g., 去商店买水果了). 2) If the object has a modifier or quantity (like "不少" or "三个"), '了' MUST go directly after the verb (Verb + 了 + Modifier + Object, e.g., 买了 不少 水果). Do not invent any other rules.
+                               - CRITICAL ACCURACY FOR "了": If they ask about "了", explain it based strictly on these rules: 1) To show an action is finished, '了' goes at the end of the sentence. 2) If the object has a modifier or quantity (like "不少" or "三个"), '了' MUST go directly after the verb (Verb + 了 + Modifier + Object). Do not invent any other rules.
                                - CRITICAL FOCUS: NEVER explain or give hints about the CURRENT translation task while answering a grammar question. Just answer their specific question, then immediately steer them back to the translation task using EXACTLY this format with the heavy brackets: "Now, let's get back to our translation: 【{display_foreign}】".
                                - Stop generating.
 
-                            2. MISUSE OF "和" (AND) TO CONNECT CLAUSES:
+                            2. MISSING TENSE / COMPLETED ACTION MARKER (了):
+                               IF the target sentence contains "了" to indicate a past/completed action, AND the student's input completely misses "了" (even if it's a grammatically valid present-tense sentence like 你去商店买什么):
+                               - CRITICAL: Do NOT praise it as "perfectly natural". Missing tense is a major error here.
+                               - Output: "Your sentence makes sense for a present or future action! 🌟 BUT, notice that this action already happened in the past. In Chinese, how do we show an action is completed? Where should we put 【了】?"
+                               - Stop generating.
+
+                            3. MISUSE OF "和" (AND) TO CONNECT CLAUSES:
                                IF the student uses "和" to connect two independent clauses/sentences (e.g., 我不喜欢, 和她也不喜欢):
                                - Output: "Great try! 🌟 But here's an important tip: in Chinese, 【和】 (and) is generally only used to connect nouns (like 'apples and bananas'). It is NOT used to connect two full sentences! To connect two sentences, we simply use a comma."
                                - Guide them to remove 【和】. Give the formula: 【Sentence 1】, 【Sentence 2】.
                                - Stop generating.
 
-                            3. MISSING "太" OR "了" IN EXCLAMATIONS:
+                            4. MISSING "太" OR "了" IN EXCLAMATIONS:
                                IF the target uses the "太 + Adjective + 了" structure (like 太好看了), and the student misses "太" or "了":
                                - Output: "Great try! 🌟 To say something is 'so' or 'too' [adjective], we use the structure 【太】 + 【Adjective】 + 【了】. Can you try putting your words into this formula?"
                                - Stop generating.
 
-                            4. MULTIPLE STRUCTURAL ERRORS (The 3-step Combo):
-                               IF the student's input has 2 or more distinct errors (e.g., missing measure word AND wrong position word AND foreign word order):
-                               - Output: "Great try! 🌟 But this sentence has a few typical errors (like measure words or word order). Let's use this ultimate formula: 【[Provide the correct structural formula here, e.g., Place + 有 + Noun]】. Can you try putting your words into this formula?"
+                            5. MULTIPLE STRUCTURAL ERRORS (Guiding Thought over Formulas):
+                               IF the student's input has 2 or more distinct errors (e.g., wrong preposition placement AND missing measure word AND missing '了'):
+                               - CRITICAL: DO NOT give a massive, overwhelming formula. DO NOT hardcode questions about prepositions or "了" unless they are actually in the target sentence!
+                               - Output: "Great try! 🌟 Let's think about the structure step-by-step." Then, dynamically identify the 1 or 2 main structural issues in their input (e.g., time word position, missing measure word) and ask a gentle, guiding question for each based ONLY on the target sentence grammar. End with: "Can you try rearranging your words?"
                                - Stop generating.
 
-                            5. ACTION AT A PLACE (Foreign Thinking):
+                            6. ACTION AT A PLACE (Foreign Thinking):
                                IF the target uses "Subject + 在 + Place + Verb", but the student puts the place at the end (e.g., 我工作在医院):
                                - Output: "Oops, this is foreign language thinking! 🌟 In Chinese, the location comes BEFORE the action."
                                - Give the formula: 【Someone/Subject】 + 【在】 + 【Place】 + 【Verb/Action】.
                                - Stop generating.
 
-                            6. PREPOSITION PHRASES (给 / 和 / 对 + Person):
+                            7. PREPOSITION PHRASES (给 / 和 / 对 + Person):
                                - CRITICAL CHECK: First, verify that 【给】, 【和】, or 【对】 is acting as a PREPOSITION modifying another main verb (e.g., doing something FOR/TO someone, WITH someone). Do NOT trigger this rule if they are the main verb (like "给我水" - give me water, or "你是对的" - you are correct) or just a noun conjunction.
                                - IF they are prepositions AND the student puts them AFTER the main verb (e.g., 做饭给我, 说汉语和我朋友):
                                - Output: "Oops, foreign language thinking! 🌟 In Chinese, preposition phrases indicating 'for/to someone' (给 / 对...) or 'with someone' (和...) MUST come BEFORE the main action verb."
                                - Give the formula: 【Subject】 + 【给 / 和 / 对 + Person】 + 【Verb (+ Object)】.
                                - Stop generating.
 
-                            7. QUESTION WITH "怎么样" (HOW):
+                            8. QUESTION WITH "怎么样" (HOW):
                                IF the target uses "怎么样" and the student puts it at the beginning or middle incorrectly (e.g., "怎么样你爸爸的身体?"):
                                - Output: "Great try! 🌟 In Chinese, to ask 'how is someone/something', we usually just put 【怎么样】 at the very end of the sentence. Can you try moving it to the end?"
                                - Stop generating.
 
-                            8. MISSING MEASURE WORD WITH THIS/THAT (这/那):
+                            9. MISSING MEASURE WORD WITH THIS/THAT (这/那):
                                IF the target has "这/那" + Measure Word + Noun, and the student wrote 这/那 + Noun:
                                - Output: "Great try! 🌟 But in Chinese, when we say 'this [noun]' or 'that [noun]', we MUST use a measure word."
                                - Give the formula: 【这 / 那】 + 【Measure Word】 + 【Noun】.
                                - Stop generating.
 
-                            9. PLACE + 有 + NOUN (There is/are...):
+                            10. PLACE + 有 + NOUN (There is/are...):
                                IF the target uses "Place + 有 + Noun", and the student wrote "Noun + 在 + Place":
                                - Output: "You are so close! 💪 To say 'There is/are [something] in [a place]', Chinese uses a special fixed structure."
                                - Give the formula: 【Place】 + 【有】 + 【Something/Someone】.
                                - Stop generating.
                             
-                            10. QUESTION WITH "什么", "做/干什么", "几", "哪", "什么时候", "哪儿", "哪里" OR "谁的" (WHOSE):
+                            11. QUESTION WITH "什么", "做/干什么", "几", "哪", "什么时候", "哪儿", "哪里" OR "谁的" (WHOSE):
                                IF the student puts the question word at the beginning (foreign word order):
                                - STEP A (If they haven't provided a simple declarative statement yet):
                                  You MUST output exactly this logic in {ui_lang}: "🌟 Oops, this is foreign language thinking! Let's think of a natural declarative answer to THIS sentence first. For example, how do you say: '[Insert an English declarative sentence answering the target question from a 1st-person perspective]?'"
@@ -591,27 +610,27 @@ def main():
                                  *CRITICAL FOR "DO WHAT"*: If asking what to DO (做什么), explicitly tell them to replace the action with 【做什么】, not just 【什么】.
                                  Stop generating.
 
-                            11. SIMPLE "谁" (WHO) QUESTION WITHOUT "的" (e.g. 他们是谁？):
+                            12. SIMPLE "谁" (WHO) QUESTION WITHOUT "的" (e.g. 他们是谁？):
                                - Output: "Good try! 🌟 In Chinese, even for questions, we stick to the simplest declarative structure: 【Subject】 + 【Verb】 + 【Object】. The question word 【谁】 just sits in the Object or Subject position."
                                - Stop generating.
                                
-                            12. TARGET IS A STATEMENT:
+                            13. TARGET IS A STATEMENT:
                                - Output: "Almost there! 💪 In Chinese, the structure is simpler: 【Subject】 + 【Verb】 + 【Object】 (e.g., 【我】 + 【叫】 + 【Lucia】)."
                                - Stop generating.
 
-                            13. PERFECT CHINESE BUT SYSTEM MISMATCH (The False Praise Trap):
+                            14. PERFECT CHINESE BUT SYSTEM MISMATCH (The False Praise Trap):
                                If the student's input "{user_text_clean}" is grammatically flawless Chinese, but it doesn't exactly match "{target_zh}" (e.g., they added an extra pronoun like "我" after "但是", or used a slightly different but valid word):
                                - Output: "Your sentence is totally natural and correct! 🎉 However, for this specific challenge, let's try it without the extra 【[Insert the extra word they used]】 (or: let's use 【[Target Word]】 instead). Can you try saying it again?"
                                - Stop generating.
                                
-                            14. NORMAL MISTAKES (Wrong character, etc.):
+                            15. NORMAL MISTAKES (Wrong character, etc.):
                                - Point out the specific mistake using 【 】 warmly. Keep it to one short sentence.
                                - Note: Measure words are OPTIONAL after '多少'. Do NOT correct them if they just say '多少' + Noun without a measure word.
                             
-                            15. STRICTEST RULE 1 (NO FORCED OMISSIONS): NEVER tell a student to omit a subject (like 你 or 我). Having a subject is ALWAYS correct in Chinese. If their subject is in the wrong place, guide them to move it (usually to the very beginning), but DO NOT tell them to delete it.
+                            16. STRICTEST RULE 1 (NO FORCED OMISSIONS): NEVER tell a student to omit a subject (like 你 or 我). Having a subject is ALWAYS correct in Chinese. If their subject is in the wrong place, guide them to move it (usually to the very beginning), but DO NOT tell them to delete it.
                             
-                            16. STRICTEST RULE 2 (NO FALSE PASS - ANTI-FALSE-PRAISE PROTOCOL):
-                                Since you are generating a response, the student HAS FAILED the system's exact match check. You are strictly FORBIDDEN from saying "You absolutely got it!", "Perfect!", or giving any impression that they have fully passed this question. You MUST guide them to adjust their sentence to match "{target_zh}" using Rule 13 or point out the remaining error. NEVER output the full correct target sentence ("{target_zh}") directly!
+                            17. STRICTEST RULE 2 (NO FALSE PASS - ANTI-FALSE-PRAISE PROTOCOL):
+                                Since you are generating a response, the student HAS FAILED the system's exact match check. You are strictly FORBIDDEN from saying "You absolutely got it!", "Perfect!", or giving any impression that they have fully passed this question. You MUST guide them to adjust their sentence to match "{target_zh}" using Rule 14 or point out the remaining error. NEVER output the full correct target sentence ("{target_zh}") directly!
                             """
                             ai_feedback = get_ai_response(current_context, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
