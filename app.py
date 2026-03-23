@@ -148,20 +148,33 @@ def is_translation_match(user_input, target):
     if u_clean == t_clean:
         return True
 
+    # 敬语单复数等价
     u_temp = u_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     t_temp = t_clean.replace("你们", "你").replace("您们", "你").replace("您", "你")
     
+    # 年龄提问等价
     u_temp = u_temp.replace("多大了", "几岁").replace("几岁了", "几岁").replace("多大", "几岁")
     t_temp = t_temp.replace("多大了", "几岁").replace("几岁了", "几岁").replace("多大", "几岁")
     
+    # 块和块钱等价
     u_temp = u_temp.replace("块钱", "块")
     t_temp = t_temp.replace("块钱", "块")
     
+    # 多少 + 量词 豁免
     u_temp = re.sub(r'多少[个口只本块件]', '多少', u_temp)
     t_temp = re.sub(r'多少[个口只本块件]', '多少', t_temp)
     
+    # 学习 = 学
     u_temp = u_temp.replace("学习", "学")
     t_temp = t_temp.replace("学习", "学")
+    
+    # 【新增】一些 = 些
+    u_temp = u_temp.replace("一些", "些")
+    t_temp = t_temp.replace("一些", "些")
+    
+    # 【新增】菜 = 饭 (在 HSK1 语境下强行等价，防啰嗦)
+    u_temp = u_temp.replace("菜", "饭")
+    t_temp = t_temp.replace("菜", "饭")
     
     if u_temp == t_temp:
         return True
@@ -175,6 +188,7 @@ def is_translation_match(user_input, target):
     if u_de == t_de:
         return True
 
+    # 时态词倒装豁免 
     time_words = ["今天", "明天", "昨天", "今年", "明年", "去年", "上午", "下午", "晚上", "早上", "现在", "什么时候", "几点", "几点钟", "哪天", "几号"]
     pronouns = ["我", "你", "他", "她", "我们", "你们", "他们", "她们"]
     for t_word in time_words:
@@ -184,6 +198,7 @@ def is_translation_match(user_input, target):
             if (t_word + p) in u_de:
                 if u_de.replace(t_word + p, p + t_word) == t_de: return True
 
+    # 主语补全豁免
     for p in ["你", "我", "他", "她", "你们", "我们", "他们", "她们"]:
         if u_temp == p + t_temp: 
             return True
@@ -199,6 +214,7 @@ def is_translation_match(user_input, target):
         if u_time == t_time:
             return True
 
+    # 包含时间、点、分词汇的“是”字豁免
     date_keywords = ["月", "号", "日", "星期", "今天", "明天", "昨天", "今年", "明年", "去年", "几", "点", "分", "现在"]
     if any(k in t_time for k in date_keywords):
         u_shi = u_time.replace("是", "")
@@ -209,7 +225,9 @@ def is_translation_match(user_input, target):
     return False
 
 def apply_scaffolding(student_input, target_sentence, lang_dict):
+    # 1. 检查 "几" 后面是否漏了量词
     if "几" in student_input:
+        # 添加绝对豁免名单
         exemptions = ["几月", "几号", "几日", "星期几", "几岁", "几点", "几分", "几天", "几年", "几点钟"]
         if not any(keyword in student_input for keyword in exemptions):
             mws = ["个", "口", "只", "本", "岁", "块", "件", "瓶", "杯", "碗"]
@@ -218,6 +236,7 @@ def apply_scaffolding(student_input, target_sentence, lang_dict):
                 if not any(mw in parts[1][:2] for mw in mws):
                     return False, lang_dict.get("scaffold_mw", "💡 Hint: In Chinese, when asking 'how many' with '几', you usually need a measure word (like 个, 口, 本) right after it. Try again!")
 
+    # 2. 检查方位词是否误加了 "的"
     if "的" in target_sentence and any(p in target_sentence for p in ["上", "下", "前", "后", "里"]):
         if "的" in student_input:
             for noun in ["书", "水果", "电脑", "猫", "狗", "衣服", "桌子", "椅子", "杯子"]:
@@ -226,6 +245,7 @@ def apply_scaffolding(student_input, target_sentence, lang_dict):
     return True, ""
 
 async def generate_tts_audio(text, voice_code="zh-CN-XiaoxiaoNeural"):
+    # 强制击穿浏览器音频缓存
     output_file = f"temp_audio_{int(time.time())}_{random.randint(100,999)}.mp3"
     communicate = edge_tts.Communicate(text, voice_code)
     await communicate.save(output_file)
@@ -356,21 +376,22 @@ def main():
                     raw_qa_pool.append(item)
                     seen_qa.add(text)
                     
+            # 【核心修复5】：Q&A 池彻底过滤掉当前 Unit 的*所有* sentences，防死角重叠
+            translation_texts_all = {get_question_text(q) for q in all_sentences}
+            
             for item in all_sentences:
                 zh_text = get_question_text(item)
-                if ("？" in zh_text or "?" in zh_text) and zh_text not in seen_qa:
+                # 哪怕有问号，只要它在句型训练库里，就绝不进入 Q&A 池
+                if ("？" in zh_text or "?" in zh_text) and zh_text not in seen_qa and zh_text not in translation_texts_all:
                     raw_qa_pool.append(item)
                     seen_qa.add(zh_text)
                     
-            translation_texts = {get_question_text(q) for q in sampled_questions}
-            primary_qa = [q for q in raw_qa_pool if get_question_text(q) not in translation_texts]
-            fallback_qa = [q for q in raw_qa_pool if get_question_text(q) in translation_texts]
+            primary_qa = raw_qa_pool
             
             random.seed(st.session_state.pool_seed)
             random.shuffle(primary_qa)
-            random.shuffle(fallback_qa)
             
-            final_qa_pool = (primary_qa + fallback_qa)[:5]
+            final_qa_pool = primary_qa[:5]
             
             st.session_state.full_qa_pool = final_qa_pool
             qa_count = len(final_qa_pool)
@@ -503,7 +524,8 @@ def main():
                             
                             1. META-QUESTIONS OR GRAMMAR QUESTIONS (e.g., "why?", "I don't know", answering an explanation):
                                IF the student asks a grammar question or asks for clarification:
-                               - Output: Warmly and clearly EXPLAIN the grammar point they are asking about in {ui_lang}. Be a great and helpful teacher! THEN, gently steer them back to the translation task by adding: "Now, let's get back to our translation: 【{display_foreign}】".
+                               - Output: Warmly and clearly EXPLAIN the grammar point they are asking about in {ui_lang}. Be a great and helpful teacher! 
+                               - CRITICAL: NEVER explain or give hints about the CURRENT translation task while answering a grammar question. Just answer their specific question, then immediately steer them back to the translation task by adding: "Now, let's get back to our translation: 【{display_foreign}】".
                                - Stop generating.
 
                             2. MULTIPLE STRUCTURAL ERRORS (The 3-step Combo):
@@ -517,24 +539,30 @@ def main():
                                - Give the formula: 【Someone/Subject】 + 【在】 + 【Place】 + 【Verb/Action】.
                                - Stop generating.
 
-                            4. QUESTION WITH "怎么样" (HOW):
+                            4. "WITH SOMEONE" PREPOSITION (和 + Person):
+                               IF the target uses "和 + Person" (with someone) AND the student puts it after the verb (e.g., 我说汉语和朋友):
+                               - Output: "Oops, foreign language thinking! 🌟 In Chinese, the preposition phrase 'with someone' (和 + Person) usually comes BEFORE the verb."
+                               - Give the formula: 【Subject】 + 【和 + Person】 + 【Verb + Object】.
+                               - Stop generating.
+
+                            5. QUESTION WITH "怎么样" (HOW):
                                IF the target uses "怎么样" and the student puts it at the beginning or middle incorrectly (e.g., "怎么样你爸爸的身体?"):
                                - Output: "Great try! 🌟 In Chinese, to ask 'how is someone/something', we usually just put 【怎么样】 at the very end of the sentence. Can you try moving it to the end?"
                                - Stop generating.
 
-                            5. MISSING MEASURE WORD WITH THIS/THAT (这/那):
+                            6. MISSING MEASURE WORD WITH THIS/THAT (这/那):
                                IF the target has "这/那" + Measure Word + Noun, and the student wrote 这/那 + Noun:
                                - Output: "Great try! 🌟 But in Chinese, when we say 'this [noun]' or 'that [noun]', we MUST use a measure word."
                                - Give the formula: 【这 / 那】 + 【Measure Word】 + 【Noun】.
                                - Stop generating.
 
-                            6. PLACE + 有 + NOUN (There is/are...):
+                            7. PLACE + 有 + NOUN (There is/are...):
                                IF the target uses "Place + 有 + Noun", and the student wrote "Noun + 在 + Place":
                                - Output: "You are so close! 💪 To say 'There is/are [something] in [a place]', Chinese uses a special fixed structure."
                                - Give the formula: 【Place】 + 【有】 + 【Something/Someone】.
                                - Stop generating.
                             
-                            7. QUESTION WITH "什么", "做/干什么", "几", "哪", "什么时候" OR "谁的" (WHOSE):
+                            8. QUESTION WITH "什么", "做/干什么", "几", "哪", "什么时候" OR "谁的" (WHOSE):
                                IF the student puts the question word at the beginning (foreign word order):
                                - STEP A (If they haven't provided a simple declarative statement yet):
                                  You MUST output exactly this logic in {ui_lang}: "🌟 Oops, this is foreign language thinking! Let's think of a natural declarative answer to THIS sentence first. For example, how do you say: '[Insert an English declarative sentence answering the target question from a 1st-person perspective]?'"
@@ -553,20 +581,20 @@ def main():
                                  *CRITICAL FOR "DO WHAT"*: If asking what to DO (做什么), explicitly tell them to replace the action with 【做什么】, not just 【什么】.
                                  Stop generating.
 
-                            8. SIMPLE "谁" (WHO) QUESTION WITHOUT "的" (e.g. 他们是谁？):
+                            9. SIMPLE "谁" (WHO) QUESTION WITHOUT "的" (e.g. 他们是谁？):
                                - Output: "Good try! 🌟 In Chinese, even for questions, we stick to the simplest declarative structure: 【Subject】 + 【Verb】 + 【Object】. The question word 【谁】 just sits in the Object or Subject position."
                                - Stop generating.
                                
-                            9. TARGET IS A STATEMENT:
+                            10. TARGET IS A STATEMENT:
                                - Output: "Almost there! 💪 In Chinese, the structure is simpler: 【Subject】 + 【Verb】 + 【Object】 (e.g., 【我】 + 【叫】 + 【Lucia】)."
                                - Stop generating.
                                
-                            10. NORMAL MISTAKES (Wrong character, etc.):
+                            11. NORMAL MISTAKES (Wrong character, etc.):
                                - Point out the specific mistake using 【 】 warmly. Keep it to one short sentence.
                                - Note: Measure words are OPTIONAL after '多少'. Do NOT correct them if they just say '多少' + Noun without a measure word.
                             
-                            11. STRICTEST RULE 1 (NO FORCED OMISSIONS): NEVER tell a student to omit a subject (like 你 or 我). Having a subject is ALWAYS correct in Chinese. If their subject is in the wrong place, guide them to move it (usually to the very beginning), but DO NOT tell them to delete it.
-                            12. STRICTEST RULE 2 (NO CHEATING): NEVER give the full correct target sentence ("{target_zh}") directly! NEVER output "✨ Perfect! You nailed it." or pretend the user passed if they failed.
+                            12. STRICTEST RULE 1 (NO FORCED OMISSIONS): NEVER tell a student to omit a subject (like 你 or 我). Having a subject is ALWAYS correct in Chinese. If their subject is in the wrong place, guide them to move it (usually to the very beginning), but DO NOT tell them to delete it.
+                            13. STRICTEST RULE 2 (NO CHEATING): NEVER give the full correct target sentence ("{target_zh}") directly! NEVER output "✨ Perfect! You nailed it." or pretend the user passed if they failed.
                             """
                             ai_feedback = get_ai_response(current_context, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
