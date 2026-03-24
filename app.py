@@ -390,16 +390,19 @@ def main():
             for q in all_possible_qs:
                 clean_q = re.sub(r'^[A-Za-z][:：]\s*', '', q).strip()
                 clean_q = re.sub(r'[@*~^#]', '', clean_q)
-                
-                if clean_q not in seen_qa and clean_q not in translation_texts:
+                if clean_q not in seen_qa:
                     raw_qa_pool.append(clean_q)
                     seen_qa.add(clean_q)
                     seen_qa.add(q)
             
+            # 【修复1】动态保底池，确保 Q&A 有足够的题目
+            final_qa_pool = [q for q in raw_qa_pool if q not in translation_texts]
+            if len(final_qa_pool) < 3:
+                final_qa_pool = raw_qa_pool
+                
             random.seed(st.session_state.pool_seed)
-            random.shuffle(raw_qa_pool)
-            
-            final_qa_pool = raw_qa_pool[:5]
+            random.shuffle(final_qa_pool)
+            final_qa_pool = final_qa_pool[:5]
             
             st.session_state.full_qa_pool = final_qa_pool
             qa_count = len(final_qa_pool)
@@ -543,10 +546,10 @@ def main():
                                - Output: "Your sentence makes sense for a present or future action! 🌟 BUT, notice that this action already happened in the past. In Chinese, how do we show an action is completed? Where should we put 【了】?"
                                - Stop generating.
                                
-                            3. THE "是...的" (SHI...DE) EMPHASIS STRUCTURE:
+                            3. 【修复3】THE "是...的" (SHI...DE) EMPHASIS STRUCTURE (Heuristic Analysis):
                                IF the target sentence uses the "是...的" structure to emphasize Time, Place, or Manner (e.g., 是什么时候认识的, 是坐火车去的, 不是昨天买的) AND the student's input misses "是" or "的", or uses them incorrectly:
-                               - Output: "Great try! 🌟 In Chinese, when we want to emphasize WHEN, WHERE, or HOW a known action happened, we use the special 【是...的】 structure! The detail you are emphasizing goes right after 【是】 (or 【不是】 for negative), and 【的】 goes at the end."
-                               - Give the formula: 【Subject】 + 【是 / 不是】 + 【Time / Place / Manner】 + 【Verb】 + 【的】.
+                               - CRITICAL: DO NOT JUST GIVE A GENERIC FORMULA.
+                               - Output: "Great try! 🌟 In Chinese, when we want to emphasize WHEN, WHERE, or HOW a known action happened, we use the special 【是...的】 structure! In this specific sentence, we want to emphasize the [Time/Place/Manner], which is 【[Identify the specific word in the target, e.g., '两年前' or '在大学']】. Where should we place 【是】 and 【的】 to wrap around this emphasized detail and the verb? Can you try rearranging your words?"
                                - Stop generating.
 
                             4. MISUSE OF "和" (AND) TO CONNECT CLAUSES:
@@ -590,10 +593,10 @@ def main():
                                - Output: "Great try! 🌟 In Chinese, to ask 'how is someone/something', we usually just put 【怎么样】 at the very end of the sentence. Can you try moving it to the end?"
                                - Stop generating.
 
-                            11. MISSING MEASURE WORD WITH THIS/THAT (这/那):
+                            11. 【修复2】MISSING MEASURE WORD WITH THIS/THAT (这/那):
                                IF the target has "这/那" + Measure Word + Noun, and the student wrote 这/那 + Noun:
-                               - Output: "Great try! 🌟 But in Chinese, when we say 'this [noun]' or 'that [noun]', we MUST use a measure word."
-                               - Give the formula: 【这 / 那】 + 【Measure Word】 + 【Noun】.
+                               - CRITICAL: Check ALL instances of "这/那" in the sentence (there might be more than one!).
+                               - Output: "Great try! 🌟 But in Chinese, when we say 'this [noun]' or 'that [noun]', we MUST use a measure word. (Point out the specific nouns they missed measure words for, e.g., for 'book' we use 【本】 and for 'bookstore' we use 【家】)."
                                - Stop generating.
 
                             12. PLACE + 有 + NOUN (There is/are...):
@@ -643,7 +646,7 @@ def main():
                             18. STRICTEST RULE 1 (NO FORCED OMISSIONS): NEVER tell a student to omit a subject (like 你 or 我). Having a subject is ALWAYS correct in Chinese. If their subject is in the wrong place, guide them to move it (usually to the very beginning), but DO NOT tell them to delete it.
                             
                             19. STRICTEST RULE 2 (NO FALSE PASS - ANTI-FALSE-PRAISE PROTOCOL):
-                                Since you are generating a response, the student HAS FAILED the system's exact match check. You are strictly FORBIDDEN from saying "You absolutely got it!", "Perfect!", or giving any impression that they have fully passed this question. You MUST guide them to adjust their sentence to match "{target_zh}" using Rule 16 or point out the remaining error. NEVER output the full correct target sentence ("{target_zh}") directly!
+                                Since you are generating a response, the student HAS FAILED the system's exact match check. You are strictly FORBIDDEN from saying "You absolutely got it!", "Perfect!", or giving any impression that they have fully passed this question. You MUST guide them to adjust their sentence to match "{target_zh}" using Rule 14 or point out the remaining error. NEVER output the full correct target sentence ("{target_zh}") directly!
                             """
                             ai_feedback = get_ai_response(current_context, da_longren_translation_prompt)
                             st.session_state.messages.append({"role": "assistant", "content": ai_feedback, "audio": None})
@@ -698,7 +701,7 @@ def main():
                     LANGUAGE & TONE RULE:
                     1. ABSOLUTE STRICT RULE: Your entire response (praise, explanation, feedback) MUST be 100% in {ui_lang}. Do NOT output ANY Chinese characters outside of the <audio> tag. NEVER use Chinese for praise like "太棒了" or "你回答得非常正确".
                     2. TONE: Be extremely positive and friendly! Use emojis to celebrate their success. Keep it concise.
-                    3. CRITICAL AUDIO FORMAT RULE: You MUST output EXACTLY <audio>中文句子</audio> at the very end. Do NOT put emojis, URLs, or HTML attributes like <source src="..."> inside the tag!
+                    3. 【修复1】AUDIO RULE: IF the student PASSES the question, you MUST output their correct sentence in an <audio>中文句子</audio> tag at the very end. IF they DO NOT pass (i.e. you are giving a hint or asking them to try again), DO NOT output any <audio> tag!
                     
                     YOUR TASK:
                     1. Check if they are merely TRANSLATING. If they translated the question instead of answering it, tell them gently: "Oops! This is not a translation exercise. Please answer the question based on a real situation! 💡"
